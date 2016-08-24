@@ -1,0 +1,6 @@
+{
+  "name": "Glucose",
+  "tagline": "An infant, strongly-typed functional programming language.",
+  "body": "Glucose can barely be said to have begun development.\r\n\r\nIt represents an optimistic project to develop a pure, strongly typed functional programming language, very much inspired by Haskell, with the following broad goals:\r\n * Performance\r\n * Expressive typing\r\n * Syntactic brevity\r\n\r\nThe intention is that development of the language and compiler will proceed incrementally, with tests and documentation maintained along with it.",
+  "note": "Don't delete this file! It's used internally to help with page regeneration."
+}
