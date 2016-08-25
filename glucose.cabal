@@ -17,7 +17,12 @@ library
   build-depends:       base >= 4.7 && < 5
                      , text
   exposed-modules:     Glucose.Compiler
+  other-modules:       Glucose.Lexer
+                     , Glucose.Parser
+                     , Glucose.Lang
+                     , Glucose.Codegen
                      , LLVM.AST
+  default-extensions:  OverloadedStrings
   default-language:    Haskell2010
 
 executable glucose
