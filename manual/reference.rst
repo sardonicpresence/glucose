@@ -1,0 +1,7 @@
+Language Reference
+==================
+
+The **glucose** language is presently utterly trivial.
+
+A source file consisting solely of white-space is compiled to an empty LLVM module.
+The presence of any other character constitutes a syntax error.

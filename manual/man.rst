@@ -1,0 +1,4 @@
+glucose
+-------
+
+.. include:: usage.rst
