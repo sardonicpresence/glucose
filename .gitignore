@@ -18,3 +18,7 @@ cabal.sandbox.config
 .stack-work/
 cabal.project.local
 manual/_build
+
+example.hs
+example.ll
+example.s

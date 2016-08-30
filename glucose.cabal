@@ -1,5 +1,5 @@
 name:                glucose
-version:             0.0.0.0
+version:             0.0.2
 synopsis:            A strongly-typed functional programming language.
 description:         Please see README.md
 homepage:            https://github.com/sardonicpresence/glucose#readme
@@ -16,13 +16,34 @@ library
   hs-source-dirs:      src
   build-depends:       base >= 4.7 && < 5
                      , text
+                     , mtl
+                     , containers
+                     , megaparsec
+                     , lens
   exposed-modules:     Glucose.Compiler
-  other-modules:       Glucose.Lexer
+                     , Glucose.Lexer
+                     , Glucose.Lexer.Location
                      , Glucose.Parser
-                     , Glucose.Lang
+                     , Glucose.Error
+                     , Glucose.AST
+                     , Glucose.Token
+                     , Glucose.Namespace
+                     , Glucose.TypeChecker
                      , Glucose.Codegen
+                     , Glucose.Lexer.Char
+                     , Glucose.Lexer.Lexeme
+                     , Glucose.Lexer.NumericLiteral
+                     , Glucose.Parser.Tokens
                      , LLVM.AST
   default-extensions:  OverloadedStrings
+                     , BangPatterns
+                     , MultiParamTypeClasses
+                     , TupleSections
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , NamedFieldPuns
+                     , LambdaCase
+                     , ViewPatterns
   default-language:    Haskell2010
 
 executable glucose
@@ -43,12 +64,19 @@ test-suite glucose-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       Glucose.CompilerSpec
+                     , Glucose.CodegenSpec
+                     , Glucose.TypeCheckerSpec
+                     , Glucose.ParserSpec
+                     , Glucose.LexerSpec
+                     , Test.Utils
+                     , Test.Prelude
   build-depends:       base
                      , glucose
                      , text
                      , hspec
                      , QuickCheck
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-extensions:  OverloadedStrings
   default-language:    Haskell2010
 
 source-repository head

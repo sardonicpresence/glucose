@@ -8,3 +8,4 @@ glucose
 
    guide
    reference
+   releases

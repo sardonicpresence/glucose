@@ -1,19 +1,16 @@
 module Glucose.CompilerSpec (spec) where
 
-import Test.Hspec
-import Test.QuickCheck
+import Test.Prelude
 
-import Control.Monad
-import Data.Text.Lazy
+import Data.Text
 import Glucose.Compiler
-
-shouldErrorContaining :: Either String a -> String -> Expectation
-shouldErrorContaining (Right _) _ = expectationFailure "did not fail"
-shouldErrorContaining (Left e) s = e `shouldContain` s
 
 spec :: Spec
 spec = describe "compile" $ do
   it "compiles white-space to an empty module" $
-    unpack <$> compile (pack " \r\n \f\xa0\x85 ") `shouldBe` Right ""
-  it "fails on non-white-space" $
-    compile (pack " \n  $~") `shouldErrorContaining` "$~"
+    unpack <$> compile " \r\n \f\xa0\x85 " `shouldBe` Right ""
+  it "fails on unexpected operator" $
+    compile " \n  $~" `shouldErrorContaining` "$~"
+  it "correctly compiles utf8 example with global numeric constants" $
+    unpack <$> compile "\x5d0\&_a0 =\xa0\&123e01\n_b\x5d5\&0=12.3e-01" `shouldBe`
+      Right "@$5d0$_a0 = unnamed_addr constant i32 1230\n\n@_b$5d5$0 = unnamed_addr constant double 1.23\n"

@@ -4,3 +4,5 @@ packages:
 - '.'
 extra-deps:
 resolver: nightly-2016-08-24
+ghc-options:
+  "*": -Wall -Wno-orphans
