@@ -1,15 +1,12 @@
 module Glucose.AST where
 
-import Data.Text
+import Glucose.Identifier
 import Glucose.Lexer.Location
 
 data Module = Module [Definition] deriving (Eq, Show)
 
-data Definition = Definition Identifier Literal Location deriving (Eq, Show)
+data Definition = Definition Identifier Expression Location deriving (Eq, Show)
+
+data Expression = Literal Literal | Variable Identifier deriving (Eq, Show)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq, Show)
-
-newtype Identifier = Identifier Text deriving (Eq, Ord)
-
-instance Show Identifier where
-  show (Identifier n) = show n

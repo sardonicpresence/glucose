@@ -3,6 +3,7 @@ module Glucose.ParserSpec (spec) where
 import Test.Prelude
 
 import qualified Glucose.AST as AST
+import qualified Glucose.Identifier as AST
 import Glucose.Lexer.Lexeme
 import Glucose.Lexer.Location
 import Glucose.Parser
@@ -17,11 +18,14 @@ spec = describe "parse" $ do
   it "parses global numeric literal definitions correctly" $
     parseTokens [Identifier "a", Operator Assign, IntegerLiteral 123, EndOfDefinition,
                  Identifier "b", Operator Assign, FloatLiteral 0.98, EndOfDefinition] `shouldBe`
-      Right (AST.Module [AST.Definition (AST.Identifier "a") (AST.IntegerLiteral 123) beginning,
-                         AST.Definition (AST.Identifier "b") (AST.FloatLiteral 0.98) beginning])
+      Right (AST.Module [AST.Definition (AST.Identifier "a") (AST.Literal (AST.IntegerLiteral 123)) beginning,
+                         AST.Definition (AST.Identifier "b") (AST.Literal (AST.FloatLiteral 0.98)) beginning])
+  it "parses global constant aliases correctly" $
+    parseTokens [Identifier "a", Operator Assign, Identifier "b", EndOfDefinition] `shouldBe`
+      Right (AST.Module [AST.Definition (AST.Identifier "a") (AST.Variable (AST.Identifier "b")) beginning])
   it "parses definition at eof without newline" $
     parseTokens [Identifier "a", Operator Assign, IntegerLiteral 123] `shouldBe`
-      Right (AST.Module [AST.Definition (AST.Identifier "a") (AST.IntegerLiteral 123) beginning])
+      Right (AST.Module [AST.Definition (AST.Identifier "a") (AST.Literal (AST.IntegerLiteral 123)) beginning])
   it "errors on superfluous tokens after definition" $
     parseTokens [Identifier "a", Operator Assign, IntegerLiteral 123, Identifier "b"]
       `shouldErrorContaining` "expecting end"

@@ -1,17 +1,20 @@
 module Glucose.Namespace where
 
-import Data.Map
-import Glucose.AST (Definition(..), Identifier)
+import Data.Map as Map
+import Glucose.AST (Definition(..))
 import Glucose.Error
-import Glucose.Lexer.Location
+import Glucose.Identifier
 
-newtype Namespace = Namespace (Map Identifier Location)
+newtype Namespace = Namespace (Map Identifier Definition)
 
 emptyNamespace :: Namespace
 emptyNamespace = Namespace empty
 
 declare :: Definition -> Namespace -> Error Namespace
-declare (Definition n _ loc) (Namespace ns) = let (prior, ns') = insertLookupWithKey undefined n loc ns in
+declare def@(Definition n _ loc) (Namespace ns) = let (prior, ns') = insertLookupWithKey undefined n def ns in
   maybe (pure $ Namespace ns') (throwError . formatError) prior where
-  formatError previous = "duplicate definition of " ++ show n ++ " at " ++ show loc ++
-                       "\npreviously defined at " ++ show previous
+  formatError (Definition _ _ previous) =
+    "duplicate definition of " ++ show n ++ " at " ++ show loc ++ "\npreviously defined at " ++ show previous
+
+definitionOf :: Identifier -> Namespace -> Maybe Definition
+definitionOf n (Namespace ns) = Map.lookup n ns

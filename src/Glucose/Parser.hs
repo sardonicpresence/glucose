@@ -6,6 +6,7 @@ import Data.Set as Set
 import Text.Megaparsec hiding (Token, parse)
 
 import Glucose.AST as AST
+import Glucose.Identifier as AST
 import Glucose.Lexer.Lexeme (SyntacticToken)
 import Glucose.Lexer.Location
 import qualified Glucose.Lexer.Lexeme as Lexer
@@ -23,9 +24,14 @@ definition :: ErrorComponent e => Parser e Definition
 definition = do
   name <- identifier
   (SourcePos _ sl sc) <- getPosition
-  value <- operator Assign *> literal <* endOfDefinition
+  value <- operator Assign *> expression <* endOfDefinition
   pure $ Definition name value (Location 0 (fromIntegral $ unPos sl) (fromIntegral $ unPos sc))
--- definition = Definition <$> identifier <*> (operator Assign *> literal <* endOfDefinition) <?> "definition"
+-- definition = Definition <$> identifier <*> (operator Assign *> expression <* endOfDefinition) <?> "definition"
+
+expression :: ErrorComponent e => Parser e Expression
+expression = literalExpression <|> variableReference where
+  literalExpression = Literal <$> literal
+  variableReference = Variable <$> identifier
 
 endOfDefinition :: ErrorComponent e => Parser e ()
 endOfDefinition = (eof <|>) . lexeme "end of definition" $ \case

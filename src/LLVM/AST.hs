@@ -1,7 +1,6 @@
 module LLVM.AST where
 
 import Data.Char
-import Data.List
 import Data.Monoid
 import Data.Text (Text)
 import Data.Text.Lazy (toStrict)
@@ -12,12 +11,23 @@ import qualified Data.Text as Text
 data Module = Module [Global]
   deriving (Eq)
 instance Show Module where
-  show (Module globals) = intercalate "\n" $ map show globals
+  show (Module globals) = concatMap show globals
 
-data Global = VariableDefinition Name Constant
+data Global = VariableDefinition Name Expression
   deriving (Eq)
 instance Show Global where
   show (VariableDefinition name value) = "@" ++ show name ++ " = unnamed_addr constant " ++ withType value ++ "\n"
+
+data Expression = Literal Constant | GlobalReference Name Type
+  deriving (Eq)
+instance Show Expression where
+  show (Literal value) = show value
+  show (GlobalReference name _) = "@" ++ show name
+instance Typed Expression where
+  typeOf (Literal value) = typeOf value
+  typeOf (GlobalReference _ ty) = ty
+  withType (Literal value) = show (typeOf value) ++ " " ++ show value
+  withType (GlobalReference name ty) = show ty ++ " getelementptr inbounds (" ++ show ty ++ ", " ++ show ty ++ " * @" ++ show name ++ ", i64 0)"
 
 data Name = Name Text
   deriving (Eq)
@@ -47,10 +57,10 @@ instance Show Type where
 
 class Typed a where
   typeOf :: a -> Type
+  withType :: a -> String
+  default withType :: Show a => a -> String
+  withType a = show (typeOf a) ++ " " ++ show a
 
 instance Typed Constant where
   typeOf (I32 _) = TI32
   typeOf (F64 _) = TF64
-
-withType :: (Show a, Typed a) => a -> String
-withType a = show (typeOf a) ++ " " ++ show a

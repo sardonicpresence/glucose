@@ -5,7 +5,8 @@ The **glucose** language is presently trivial and only supports the global
 declaration of 32-bit integer and 64-bit floating-point constants.
 
 A **glucose** source file consists of zero or more definitions, each starting
-at the beginning of a line, optionally seperated by white-space.
+at the beginning of a line, optionally seperated by white-space. The order
+of definitions is not significant.
 
 Source files are UTF-8 encoded and it is the intention that any
 alphanumeric character in any script may appear in variable names. Operators
@@ -31,11 +32,12 @@ Definitions
 ----------
 
 Definitions bind a numeric constant to an identifier as either a 32-bit
-integer or a 64-bit floating-point value.
+integer or a 64-bit floating-point value, either directly or based on the
+value of another constant.
 
 A definition must be positioned at the beginning of a line and consist of
-an identifier, equals character and a numeric literal e.g.
-``identifier = 1.23e4``
+an identifier, equals character and either a numeric literal (e.g.
+``a = 1.23e4``) or identifier (e.g. ``a = b``).
 
 Integer literals may be prefixed with redundent zeros and may have positive
 integer exponents (themselves potentially prefixed with zeros) e.g. ``012e03``
