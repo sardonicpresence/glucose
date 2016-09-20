@@ -1,5 +1,5 @@
 name:                glucose
-version:             0.0.3
+version:             0.0.4
 synopsis:            A strongly-typed functional programming language.
 description:         Please see README.md
 homepage:            https://github.com/sardonicpresence/glucose#readme
@@ -7,7 +7,7 @@ license:             MIT
 license-file:        LICENSE
 author:              Neil Vice
 maintainer:          sardonicpresence@gmail.com
-copyright:           (c) 2016 Neil Vice
+copyright:           (c) 2017 Neil Vice
 category:            Language
 build-type:          Simple
 cabal-version:       >=1.10
@@ -20,23 +20,30 @@ library
                      , containers
                      , megaparsec
                      , lens
+                     , comonad
+                     , QuickCheck
   exposed-modules:     Glucose.Compiler
                      , Glucose.Lexer
+                     , Glucose.Lexer.Char
                      , Glucose.Lexer.Location
+                     , Glucose.Lexer.NumericLiteral
+                     , Glucose.Lexer.SyntacticToken
                      , Glucose.Parser
+                     , Glucose.Parser.EOFOr
+                     , Glucose.Parser.Monad
+                     , Glucose.Parser.Source
+                     , Glucose.AST
+                     , Glucose.Codegen.JavaScript
+                     , Glucose.Codegen.LLVM
                      , Glucose.Error
                      , Glucose.Identifier
-                     , Glucose.AST
                      , Glucose.IR
-                     , Glucose.Token
                      , Glucose.Namespace
+                     , Glucose.Token
                      , Glucose.TypeChecker
-                     , Glucose.Codegen
-                     , Glucose.Lexer.Char
-                     , Glucose.Lexer.Lexeme
-                     , Glucose.Lexer.NumericLiteral
-                     , Glucose.Parser.Tokens
+                     , Glucose.Version
                      , LLVM.AST
+                     , Control.Monad.Throw
   default-extensions:  OverloadedStrings
                      , BangPatterns
                      , MultiParamTypeClasses
@@ -47,6 +54,10 @@ library
                      , LambdaCase
                      , ViewPatterns
                      , DefaultSignatures
+                     , DeriveFunctor
+                     , RankNTypes
+                     , ConstraintKinds
+                     , GeneralizedNewtypeDeriving
   default-language:    Haskell2010
 
 executable glucose
@@ -67,10 +78,16 @@ test-suite glucose-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       Glucose.CompilerSpec
-                     , Glucose.CodegenSpec
+                     , Glucose.Codegen.JavaScriptSpec
+                     , Glucose.Codegen.LLVMSpec
                      , Glucose.TypeCheckerSpec
                      , Glucose.ParserSpec
                      , Glucose.LexerSpec
+                     , Glucose.Test.Source
+                     , Glucose.Test.SyntacticToken
+                     , Glucose.Test.AST
+                     , Glucose.Test.Error
+                     , Glucose.Test.IR
                      , Test.Utils
                      , Test.Prelude
   build-depends:       base

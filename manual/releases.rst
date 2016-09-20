@@ -1,6 +1,9 @@
 Release Notes
 =============
 
+v0.0.4
+ * Supports trivial function definitions
+
 v0.0.3
  * Constants may be defined as the value of other constants
 

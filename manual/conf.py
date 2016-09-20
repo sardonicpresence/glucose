@@ -9,8 +9,8 @@ import sphinx_bootstrap_theme
 project = 'glucose'
 copyright = '2016, Neil Vice'
 author = 'Neil Vice'
-version = '0.0.3'
-release = '0.0.3'
+version = '0.0.4'
+release = '0.0.4'
 
 extensions = [
     'sphinx.ext.mathjax',

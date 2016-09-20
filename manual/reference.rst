@@ -26,7 +26,7 @@ ASCII digit.
 
 Identifiers are mangled to support LLVM IR with unsupported characters
 along with dollar signs being replaced with their Unicode code-point in
-hexadecimal surrounded by dollar signs e.g. hebrew aleph becomes $5d0$.
+hexadecimal surrounded by dollar signs e.g. Hebrew aleph becomes $5d0$.
 
 Definitions
 ----------

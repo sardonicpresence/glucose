@@ -1,59 +1,54 @@
-module Glucose.Parser (parse) where
+module Glucose.Parser where
 
-import Data.Bifunctor
-import Data.List.NonEmpty
-import Data.Set as Set
-import Text.Megaparsec hiding (Token, parse)
+import Control.Applicative
+import Control.Comonad
+import Control.Lens
+import Data.Monoid
 
 import Glucose.AST as AST
-import Glucose.Identifier as AST
-import Glucose.Lexer.Lexeme (SyntacticToken)
+import Glucose.Error
+import Glucose.Identifier as AST hiding (identifier)
 import Glucose.Lexer.Location
-import qualified Glucose.Lexer.Lexeme as Lexer
 import Glucose.Token as Token
-import Glucose.Parser.Tokens ()
+import Glucose.Parser.EOFOr
+import Glucose.Parser.Monad
+import Glucose.Parser.Source
 
-type Parser e = Parsec e [SyntacticToken]
+infixl 4 <$$>
 
-parse :: [SyntacticToken] -> Either String Module
-parse = bimap parseErrorPretty id . runParser parser "" where
-  parser :: Parser Dec Module
+(<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
+(<$$>) = (<$>) . (<$>)
+
+type Parse a = Parser Location (FromSource Token) [FromSource Token] (FromSource a)
+
+parse :: (MonadThrow (ParseError Location (FromSource Token)) m) => Location -> [FromSource Token] -> m Module
+parse eofLocation = runParser parser (maybeEOF eofLocation startLocation) where
   parser = Module <$> many definition <* eof
 
-definition :: ErrorComponent e => Parser e Definition
-definition = do
-  name <- identifier
-  (SourcePos _ sl sc) <- getPosition
-  value <- operator Assign *> expression <* endOfDefinition
-  pure $ Definition name value (Location 0 (fromIntegral $ unPos sl) (fromIntegral $ unPos sc))
--- definition = Definition <$> identifier <*> (operator Assign *> expression <* endOfDefinition) <?> "definition"
+definition :: Parse AST.Definition
+definition = toDefinition <$> identifier <* operator Assign <*> expression <* endOfDefinition where
+  toDefinition a b = AST.Definition <$> duplicate a <*> duplicate b
 
-expression :: ErrorComponent e => Parser e Expression
-expression = literalExpression <|> variableReference where
-  literalExpression = Literal <$> literal
-  variableReference = Variable <$> identifier
+expression :: Parse AST.Expression
+expression = AST.Variable <$$> identifier
+         <|> AST.Literal <$$> literal
 
-endOfDefinition :: ErrorComponent e => Parser e ()
-endOfDefinition = (eof <|>) . lexeme "end of definition" $ \case
-  EndOfDefinition -> Just ()
-  _ -> Nothing
+endOfDefinition :: Parse ()
+endOfDefinition = (lexeme "end of definition" . traverse $ is _endOfDefinition) <|> pure <$> eof
 
-identifier :: ErrorComponent e => Parser e Identifier
-identifier  = lexeme "identifier" $ \case
-  Token.Identifier s -> Just $ AST.Identifier s
-  _ -> Nothing
+identifier :: Parse AST.Identifier
+identifier = lexeme "identifier" . traverse $ AST.Identifier <$$> preview _identifier
 
-operator :: ErrorComponent e => Token.Operator -> Parser e ()
-operator op = lexeme (show op) $ \case
-  Token.Operator a -> if a == op then Just () else Nothing
-  _ -> Nothing
+operator :: Operator -> Parse ()
+operator op = lexeme "operator" . traverse . is $ _operator . filtered (op ==)
 
-literal :: ErrorComponent e => Parser e Literal
-literal = lexeme "literal" $ \case
-  Token.IntegerLiteral n -> Just $ AST.IntegerLiteral (fromInteger n)
-  Token.FloatLiteral n -> Just $ AST.FloatLiteral (fromRational n)
-  _ -> Nothing
+literal :: Parse Literal
+literal = lexeme "literal" . traverse $ \t -> integerLiteral t <|> floatLiteral t where
+  integerLiteral = AST.IntegerLiteral . fromInteger <$$> preview _integerLiteral
+  floatLiteral = AST.FloatLiteral . fromRational <$$> preview _floatLiteral
 
-lexeme :: ErrorComponent e => String -> (Token -> Maybe a) -> Parser e a
-lexeme name test = token testToken Nothing <?> name where
-  testToken x = maybe (Left (Set.singleton (Tokens (x:|[])), Set.empty, Set.empty)) Right $ test (Lexer.token x)
+beginLambda :: Parse ()
+beginLambda = lexeme "lambda" (traverse $ is _beginLambda)
+
+is :: Getting (First ()) s a -> s -> Maybe ()
+is a = preview $ a . like ()

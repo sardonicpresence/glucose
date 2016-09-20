@@ -5,4 +5,5 @@ foo
  =
   1e3
 
-  a?%c = b
+bar =
+ foo
