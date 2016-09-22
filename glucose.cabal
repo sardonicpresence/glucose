@@ -1,5 +1,5 @@
 name:                glucose
-version:             0.0.4
+version:             0.0.5
 synopsis:            A strongly-typed functional programming language.
 description:         Please see README.md
 homepage:            https://github.com/sardonicpresence/glucose#readme
@@ -35,12 +35,14 @@ library
                      , Glucose.AST
                      , Glucose.Codegen.JavaScript
                      , Glucose.Codegen.LLVM
+                     , Glucose.Codegen.LLVM.LocalScope
                      , Glucose.Error
                      , Glucose.Identifier
                      , Glucose.IR
                      , Glucose.Namespace
                      , Glucose.Token
                      , Glucose.TypeChecker
+                     , Glucose.VarGen
                      , Glucose.Version
                      , LLVM.AST
                      , Control.Monad.Throw

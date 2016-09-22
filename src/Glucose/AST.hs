@@ -12,18 +12,24 @@ data Definition = Definition (FromSource Identifier) (FromSource Expression) der
 instance Bound Definition where
   identifier (Definition name _) = extract name
 
-data Expression
+data Value
   = Literal Literal
   | Variable Identifier
+  | Lambda [FromSource Identifier] (FromSource Expression)
+  deriving (Eq, Show)
+
+data Expression
+  = Value Value
+  | Apply (FromSource Expression) (FromSource Value)
   deriving (Eq, Show)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq, Show)
 
-integerLiteral :: Int -> Expression
+integerLiteral :: Int -> Value
 integerLiteral = Literal . IntegerLiteral
 
-floatLiteral :: Double -> Expression
+floatLiteral :: Double -> Value
 floatLiteral = Literal . FloatLiteral
 
-variable :: Text -> Expression
+variable :: Text -> Value
 variable = Variable . Identifier

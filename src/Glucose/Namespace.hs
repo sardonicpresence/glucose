@@ -8,12 +8,14 @@ import Glucose.Identifier
 import Glucose.Lexer.Location
 import Glucose.Parser.Source
 
-data Variable = Definition (FromSource IR.Definition)
+data Variable = Arg (FromSource IR.Arg) | Definition (FromSource IR.Definition)
 
 instance Bound Variable where
+  identifier (Arg (FromSource _ arg)) = identifier arg
   identifier (Definition (FromSource _ def)) = identifier def
 
 locationOf :: Variable -> Location
+locationOf (Arg a) = startLocation a
 locationOf (Definition a) = startLocation a
 
 newtype Scope = Scope (Map Identifier Variable)
@@ -51,4 +53,4 @@ lookupVariable n (Namespace (Scope s:ss)) = (CurrentScope, ) <$> Map.lookup n s 
 lookupDefinition :: Identifier -> Namespace -> Maybe (FromSource IR.Definition)
 lookupDefinition n (Namespace ss) = go ss where
   go [] = Nothing
-  go (Scope s : ss) = (Map.lookup n s >>= \case Definition def -> Just def) <|> go ss
+  go (Scope s : ss) = (Map.lookup n s >>= \case Arg _ -> Nothing; Definition def -> Just def) <|> go ss

@@ -7,10 +7,10 @@ import Glucose.Parser.Source
 import Glucose.Test.Source
 
 constant :: Text -> Literal -> FromSource Definition
-constant name lit = definition name (Literal lit)
+constant name lit = definition name . Value $ Literal lit
 
 alias :: Text -> Text -> FromSource Definition
-alias to from = definition to (Variable $ Identifier from)
+alias to from = definition to . Value . Variable $ Identifier from
 
 definition :: Text -> Expression -> FromSource Definition
 definition name value = fromSource $ Definition (fromSource $ Identifier name) (fromSource value)

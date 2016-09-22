@@ -1,6 +1,9 @@
 Release Notes
 =============
 
+v0.0.5
+* Supports trivial function definitions
+
 v0.0.4
  * Supports transpiling to JavaScript source
  * Code generators support global aliases

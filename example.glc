@@ -7,3 +7,11 @@ foo
 
 bar =
  foo
+
+three = \a -> 3
+id = \a -> a
+_const = \ a b -> a
+test = \a -> _test
+test2 = \a -> _const test a
+test3 = _const test
+test4 = \a b -> _const _const a test3 b
