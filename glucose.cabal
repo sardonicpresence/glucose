@@ -1,5 +1,5 @@
 name:                glucose
-version:             0.0.5
+version:             0.0.6
 synopsis:            A strongly-typed functional programming language.
 description:         Please see README.md
 homepage:            https://github.com/sardonicpresence/glucose#readme
@@ -36,14 +36,21 @@ library
                      , Glucose.Desugar
                      , Glucose.Codegen.JavaScript
                      , Glucose.Codegen.LLVM
+                     , Glucose.Codegen.LLVM.NameGen
+                     , Glucose.Codegen.LLVM.RT
+                     , Glucose.Codegen.LLVM.Types
                      , Glucose.Error
                      , Glucose.Identifier
                      , Glucose.IR
+                     , Glucose.IR.Checked
                      , Glucose.Namespace
                      , Glucose.Token
                      , Glucose.TypeChecker
+                     , Glucose.VarGen
                      , Glucose.Version
                      , LLVM.AST
+                     , LLVM.DSL
+                     , LLVM.Name
                      , Data.Map.Utils
                      , Control.Monad.Throw
   default-extensions:  OverloadedStrings
@@ -57,6 +64,7 @@ library
                      , ViewPatterns
                      , DefaultSignatures
                      , DeriveFunctor
+                     , DeriveDataTypeable
                      , RankNTypes
                      , ConstraintKinds
                      , GeneralizedNewtypeDeriving

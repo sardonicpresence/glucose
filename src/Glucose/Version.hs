@@ -1,7 +1,7 @@
 module Glucose.Version where
 
 version :: String
-version = "0.0.5"
+version = "0.0.6"
 
 copyrightYear :: Int
 copyrightYear = 2017

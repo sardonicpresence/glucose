@@ -3,6 +3,7 @@ module Glucose.Identifier where
 import Control.Monad
 import Data.Map as Map
 import Data.Map.Utils
+import Data.String
 import Data.Text
 import Glucose.Lexer.Char
 import Test.QuickCheck.Arbitrary
@@ -12,6 +13,9 @@ newtype Identifier = Identifier { identify :: Text } deriving (Eq, Ord)
 
 instance Show Identifier where
   show (Identifier n) = unpack n
+
+instance IsString Identifier where
+  fromString = Identifier . pack
 
 instance Arbitrary Identifier where
   arbitrary = fmap (Identifier . pack) . (:)

@@ -15,16 +15,23 @@ desugar (AST.Module defs) = IR.Module . concat <$> traverse definition defs
 
 definition :: Error m => FromSource AST.Definition -> m [Desugared IR.Definition]
 definition def = case extract def of
-  AST.Definition name expr -> pure . (def $>) . IR.Definition name <$> expression expr
+  AST.Definition name expr -> pure . (def $>) . IR.Definition name <$> traverse expression expr
   AST.TypeDefinition name ctors -> zipWithM (constructor name) [0..] ctors
 
 constructor :: Error m => FromSource Identifier -> Int -> FromSource Identifier -> m (Desugared IR.Definition)
 constructor typeName n ctor = pure $ ctor $> IR.Definition ctor (ctor $> IR.Constructor typeName n)
 
-expression :: Error m => FromSource AST.Expression -> m (Desugared IR.Expression)
-expression = traverse $ \case
-  AST.Literal lit -> IR.Literal <$> literal lit
-  AST.Variable name -> pure $ IR.Reference UnknownKind name Unknown
+expression :: Error m => AST.Expression -> m (IR.Expression Unchecked)
+expression (AST.Value a) = value a
+expression (AST.Apply f a) = IR.Apply <$> traverse expression f <*> traverse value a
+
+value :: Error m => AST.Value -> m (IR.Expression Unchecked)
+value (AST.Literal lit) = IR.Literal <$> literal lit
+value (AST.Variable name) = pure $ IR.Reference UnknownKind name Unknown
+value (AST.Lambda args expr) = IR.Lambda <$> mapM (traverse arg) args <*> traverse expression expr
+
+arg :: Error m => Identifier -> m (IR.Arg Unchecked)
+arg a = pure $ IR.Arg a Unknown
 
 literal :: Error m => AST.Literal -> m IR.Literal
 literal (AST.IntegerLiteral value) = pure $ IR.IntegerLiteral value

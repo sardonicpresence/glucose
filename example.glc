@@ -16,3 +16,11 @@ type other
 
 Bar =
  foo
+
+three = \a -> 3
+id = \a -> a
+_const = \ a b -> a
+test = \a -> _test
+test2 = \a -> _const test a
+test4 = \a b -> _const _const a test2 b
+test5 = \a b -> id \c -> _const a c

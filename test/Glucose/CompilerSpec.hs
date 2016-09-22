@@ -21,14 +21,14 @@ spec = describe "compile" $ do
     compile LLVM " \n$~" `shouldErrorContaining` "$~"
     compile JavaScript " \n$~" `shouldErrorContaining` "$~"
   it "correctly compiles utf8 example to LLVM" $
-    unpack <$> compile LLVM source `shouldBe`
+    unpack <$> compileDefinitions LLVM source `shouldBe`
       Right ("@b = unnamed_addr alias i32, i32* @$5d0$_a0\n" ++
-             "@$5d0$_a0 = unnamed_addr constant i32 1230\n" ++
-             "@_b$5d5$0 = unnamed_addr constant double 1.23\n" ++
-             "@$5d2$_ = unnamed_addr constant i32 0\n" ++
-             "@$5d3$ = unnamed_addr constant i32 1\n")
+             "@$5d0$_a0 = unnamed_addr constant i32 1230, align 16\n" ++
+             "@_b$5d5$0 = unnamed_addr constant double 1.23, align 16\n" ++
+             "@$5d2$_ = unnamed_addr constant i32 0, align 16\n" ++
+             "@$5d3$ = unnamed_addr constant i32 1, align 16\n")
   it "correctly compiles utf8 example to JavaScript" $
-    unpack <$> compile JavaScript source `shouldBe`
+    unpack <$> compileDefinitions JavaScript source `shouldBe`
       Right ("\x5d0\&_a0 = 1230\n" ++
              "b = \x5d0\&_a0\n" ++
              "_b\x5d5\&0 = 1.23\n" ++

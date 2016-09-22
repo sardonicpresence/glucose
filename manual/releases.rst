@@ -1,6 +1,9 @@
 Release Notes
 =============
 
+v0.0.6
+ * Supports trivial, second-class function definitions
+
 v0.0.5
  * Supports enum type definitions
  * Fixed placing of aliases in JavaScript output

@@ -48,8 +48,18 @@ typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors
   constructors = traverse1 duplicate <$> identifier `separatedBy` operator Bar
 
 expression :: Parse AST.Expression
-expression = AST.Variable <$$> identifier
-         <|> AST.Literal <$$> literal
+expression = buildExpression <$> some value
+
+buildExpression :: [FromSource AST.Value] -> FromSource AST.Expression
+buildExpression [expr] = AST.Value <$> expr
+buildExpression es = let (a:as) = reverse es in AST.Apply <$> duplicate (buildExpression $ reverse as) <*> duplicate a
+
+value :: Parse AST.Value
+value = AST.Variable <$$> identifier
+    <|> AST.Literal <$$> literal
+    <|> toLambda <$> (beginLambda *> some identifier <* operator Arrow) <*> expression
+  where
+    toLambda a b = AST.Lambda <$> sequence (duplicate <$> a) <*> duplicate b
 
 endOfDefinition :: Parse ()
 endOfDefinition = (lexeme "end of definition" . traverse $ is _endOfDefinition) <|> pure <$> eof
