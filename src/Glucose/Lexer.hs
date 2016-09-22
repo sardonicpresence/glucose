@@ -4,6 +4,7 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.RWS
 import Data.Char
+import Data.Foldable
 import Data.Maybe
 import Data.Text (Text, pack, unpack)
 
@@ -39,13 +40,13 @@ tokenize :: Text -> Error [SyntacticToken]
 tokenize input = mapMaybe (syntacticToken input) <$> tokenize_ input
 
 tokenize_ :: Text -> Error [Lexeme]
-tokenize_ = runLexer . mapM_ consume . unpack
+tokenize_ = runLexer . consume . unpack
 
 runLexer :: Lex () -> Error [Lexeme]
 runLexer l = snd <$> execRWST (l *> completeLexeme Nothing) () (Lexer StartOfLine beginning beginning)
 
-consume :: Char -> Lex ()
-consume c = do
+consume :: String -> Lex ()
+consume = traverse_ $ \c -> do
   maybe (completeLexeme $ Just c) (_partial .=) =<< maybeAppend c =<< gets partial
   _pos %= updateLocation c
 
