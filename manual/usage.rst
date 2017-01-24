@@ -2,16 +2,15 @@ Synopsis
 ^^^^^^^^
 
 | glucose [file]
-| glucose -?
-| glucose -V
-| glucose --numeric-version
+| glucose -t {ll|js} [file]
 
 Description
 ^^^^^^^^^^^
 
-**glucose** compiles a single glucose source file to LLVM IR.
+**glucose** compiles a single glucose source file to LLVM IR or JavaScript source.
 
-If a source file path is specified, the output is written to the same path with a '.ll' extension.
+If a source file path is specified, the output is written to the same path with an extension based on
+the output type ('.ll' or '.js').
 
 If no path is specified, **glucose** compiles standard input to standard output.
 
@@ -19,6 +18,10 @@ Options
 ^^^^^^^
 
 .. program:: glucose
+
+.. option:: -t --output-type={ll|js}
+
+   Produce the type of output associated with the given extension: LLVM IR (default) or JavaScript source.
 
 .. option:: -? --help
 

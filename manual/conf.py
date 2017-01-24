@@ -7,7 +7,7 @@ import sphinx_bootstrap_theme
 # needs_sphinx = '1.0'
 
 project = 'glucose'
-copyright = '2016, Neil Vice'
+copyright = '2017, Neil Vice'
 author = 'Neil Vice'
 version = '0.0.4'
 release = '0.0.4'
