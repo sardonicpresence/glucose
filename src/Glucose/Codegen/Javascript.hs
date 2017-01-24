@@ -1,4 +1,4 @@
-module Glucose.Codegen.JavaScript (codegen) where
+module Glucose.Codegen.JavaScript (codegen, codegenDefinitions) where
 
 import Control.Comonad
 import Data.Monoid
@@ -13,7 +13,10 @@ instance Show JSRaw where
   show (JSRaw s) = unpack s
 
 codegen :: Module -> JSRaw
-codegen (Module defs) = JSRaw $ foldMap (definition . extract) defs
+codegen (Module defs) = codegenDefinitions $ map extract defs
+
+codegenDefinitions :: [Definition] -> JSRaw
+codegenDefinitions defs = JSRaw $ foldMap definition defs
 
 definition :: Definition -> Text
 definition (Definition (FromSource _ (Identifier name)) (FromSource _ (Lambda args expr))) =

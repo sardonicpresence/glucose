@@ -3,6 +3,8 @@ module Glucose.IR where
 import Control.Comonad
 import Control.Lens
 import Data.List
+import Data.Monoid
+import qualified Data.Set as Set
 import Glucose.Identifier
 import Glucose.Parser.Source
 
@@ -21,13 +23,13 @@ data ReferenceKind = Local | Global deriving (Eq)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq)
 
-data Arg = Arg Identifier Type deriving (Eq)
+data Arg = Arg Identifier Type deriving (Eq, Ord)
 
 data Type = Integer | Float | Function Arity Type Type | Bound Identifier
           | Free Identifier -- Must be eliminated by type-checking (should be made seperate)
-  deriving (Eq)
+  deriving (Eq, Ord)
 
-data Arity = UnknownArity | Arity Int Int deriving (Eq)
+data Arity = UnknownArity | Arity Int Int deriving (Eq, Ord)
 
 instance Show Type where
   show Integer = "Int"
@@ -38,9 +40,10 @@ instance Show Type where
   show (Free name) = "*" ++ show name
 
 instance Show Arity where
-  show UnknownArity = "-?>"
-  show (Arity n 0) = "-" ++ show n ++ ">"
-  show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
+  show _ = "->"
+  -- show UnknownArity = "-?>"
+  -- show (Arity n 0) = "-" ++ show n ++ ">"
+  -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
 argTypes :: Type -> [Type]
 argTypes (Function _ a b) = a : argTypes b
@@ -57,6 +60,7 @@ flattenApply f a = go f [a] where
   go f args = case f of
     Apply (extract -> g) (extract -> x) -> go g (x:args)
     Reference _ _ ty -> uncurry (Application f) (apply ty [] args)
+    Lambda _ _ -> undefined
     Literal _ -> error "Cannot supply arguments to a literal!" -- TODO: improve & move
   -- apply :: Type -> [Expression] -> ([[Expression]], Maybe [Expression])
   apply (Function (Arity n m) _ b) applied (a:as) | n == m+1 = apply b [] as & _1 %~ (reverse (a:applied) :)
@@ -100,6 +104,12 @@ bindType name = set $ types . filtered (== Free name)
 
 rebindType :: Identifier -> Type -> Expression -> Expression
 rebindType name = set $ types . filtered (== Bound name)
+
+captures :: Expression -> Set.Set Arg
+captures (Reference Local name ty) = Set.singleton $ Arg name ty
+captures (Apply expr arg) = captures (extract expr) <> captures (extract arg)
+captures (Lambda args value) = captures (extract value) Set.\\ Set.fromList (map extract args)
+captures _ = mempty
 
 -- * Show instances
 

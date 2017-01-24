@@ -35,7 +35,9 @@ library
                      , Glucose.AST
                      , Glucose.Codegen.JavaScript
                      , Glucose.Codegen.LLVM
-                     , Glucose.Codegen.LLVM.LocalScope
+                     , Glucose.Codegen.LLVM.NameGen
+                     , Glucose.Codegen.LLVM.RT
+                     , Glucose.Codegen.LLVM.Types
                      , Glucose.Error
                      , Glucose.Identifier
                      , Glucose.IR
@@ -45,6 +47,8 @@ library
                      , Glucose.VarGen
                      , Glucose.Version
                      , LLVM.AST
+                     , LLVM.DSL
+                     , LLVM.Name
                      , Control.Monad.Throw
   default-extensions:  OverloadedStrings
                      , BangPatterns
@@ -57,6 +61,7 @@ library
                      , ViewPatterns
                      , DefaultSignatures
                      , DeriveFunctor
+                     , DeriveDataTypeable
                      , RankNTypes
                      , ConstraintKinds
                      , GeneralizedNewtypeDeriving

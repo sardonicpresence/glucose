@@ -81,7 +81,7 @@ typeCheckExpression :: Error m => FromSource AST.Expression -> TypeCheck m IR.Ex
 typeCheckExpression expr = case extract expr of
   AST.Value value -> typeCheckValue $ value <$ expr
   AST.Apply expr arg -> do
-    expr' <- traverse (IR.freeTypes newVar <=< typeCheckExpression) $ duplicate expr
+    expr' <- traverse typeCheckExpression $ duplicate expr
     arg' <- traverse typeCheckValue $ duplicate arg
     (f, g) <- unify (IR.typeOf <$> expr') (functionOf . IR.typeOf <$> arg')
     pure $ IR.Apply (f <$> expr') (g <$> arg')
@@ -92,7 +92,7 @@ typeCheckValue expr = case extract expr of
   AST.Literal (AST.FloatLiteral a) -> pure $ IR.Literal (IR.FloatLiteral a)
   AST.Variable identifier -> do
     value <- gets $ lookupVariable identifier . namespace
-    maybe (typeCheckIdentifier $ identifier <$ expr) (pure . fromVariable) $ snd <$> value
+    maybe (typeCheckIdentifier $ identifier <$ expr) fromVariable $ snd <$> value
   AST.Lambda args def -> do
     typeCheckedArgs <- traverse (traverse typeCheckArg) args
     pushArgs typeCheckedArgs
@@ -108,7 +108,7 @@ typeCheckArg name = IR.Arg name . IR.Bound <$> newVar
 typeCheckIdentifier :: Error m => FromSource Identifier -> TypeCheck m IR.Expression
 typeCheckIdentifier variable = gets unchecked >>= \ns -> case Map.lookup (identifier variable) ns of
   Nothing -> unrecognisedVariable (startLocation variable) (identifier variable)
-  Just def -> referenceTo . extract <$> typeCheckDefinition def
+  Just def -> referenceTo =<< extract <$> typeCheckDefinition def
 
 unify :: Error m => FromSource IR.Type -> FromSource IR.Type -> m (IR.Expression -> IR.Expression, IR.Expression -> IR.Expression)
 unify ty1 ty2 = go (extract ty1) (extract ty2) where
@@ -131,15 +131,15 @@ newVar = do
 functionOf :: IR.Type -> IR.Type
 functionOf a = IR.Function IR.UnknownArity a $ IR.Free $ Identifier "_"
 
-fromVariable :: Variable -> IR.Expression
+fromVariable :: Monad m => Variable -> TypeCheck m IR.Expression
 fromVariable (Definition def) = referenceTo $ extract def
-fromVariable (Arg arg) = referenceArg $ extract arg
+fromVariable (Arg arg) = pure $ referenceArg $ extract arg
 
 referenceArg :: IR.Arg -> IR.Expression
 referenceArg (IR.Arg name ty) = IR.Reference IR.Local name ty
 
-referenceTo :: IR.Definition -> IR.Expression
-referenceTo def = IR.Reference IR.Global (identifier def) (IR.typeOf def)
+referenceTo :: Monad m => IR.Definition -> TypeCheck m IR.Expression
+referenceTo def = IR.freeTypes newVar $ IR.Reference IR.Global (identifier def) (IR.typeOf def)
 
 valueOf :: IR.Definition -> IR.Expression
 valueOf (IR.Definition _ value) = extract value

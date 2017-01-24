@@ -9,6 +9,7 @@ import Glucose.Error
 import Glucose.Test.AST as AST
 import Glucose.Test.Error
 import Glucose.Test.IR as IR
+import Glucose.Test.Source
 import qualified Glucose.TypeChecker as TC
 
 typeCheck :: AST.Module -> Either CompileError IR.Module
@@ -25,10 +26,10 @@ spec = describe "typeCheck" $ do
           , AST.constant "c" $ AST.IntegerLiteral 123
           , AST.alias "d" "a" ]
         expected = IR.Module
-          [ IR.definition "a" $ IR.Reference Global (Identifier "c") Integer
-          , IR.constant "b" $ IR.FloatLiteral 3.21
-          , IR.constant "c" $ IR.IntegerLiteral 123
-          , IR.definition "d" $ IR.Reference Global (Identifier "a") Integer ]
+          [ fromSource $ IR.definition "a" $ IR.Reference Global (Identifier "c") Integer
+          , fromSource $ IR.constant "b" $ IR.FloatLiteral 3.21
+          , fromSource $ IR.constant "c" $ IR.IntegerLiteral 123
+          , fromSource $ IR.definition "d" $ IR.Reference Global (Identifier "a") Integer ]
     in typeCheck input `shouldBe` Right expected
   it "fails a module with duplicate definitions" $
     let input = AST.Module
