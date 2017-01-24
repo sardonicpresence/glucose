@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>Synopsis &#8212; glucose 0.0.3 documentation</title>
+    <title>Synopsis &#8212; glucose 0.0.4 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.0.3',
+        VERSION:     '0.0.4',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true
@@ -30,7 +30,7 @@
     <script type="text/javascript" src="_static/js/jquery-fix.js"></script>
     <script type="text/javascript" src="_static/bootstrap-3.3.6/js/bootstrap.min.js"></script>
     <script type="text/javascript" src="_static/bootstrap-sphinx.js"></script>
-    <link rel="top" title="glucose 0.0.3 documentation" href="index.html" />
+    <link rel="top" title="glucose 0.0.4 documentation" href="index.html" />
 <meta charset='utf-8'>
 <meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
 <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1'>
@@ -50,7 +50,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           glucose</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.0.3</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.0.4</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -122,19 +122,24 @@
 <h1>Synopsis<a class="headerlink" href="#synopsis" title="Permalink to this headline">¶</a></h1>
 <div class="line-block">
 <div class="line">glucose [file]</div>
-<div class="line">glucose -?</div>
-<div class="line">glucose -V</div>
-<div class="line">glucose &#8211;numeric-version</div>
+<div class="line">glucose -t {ll|js} [file]</div>
 </div>
 </div>
 <div class="section" id="description">
 <h1>Description<a class="headerlink" href="#description" title="Permalink to this headline">¶</a></h1>
-<p><strong>glucose</strong> compiles a single glucose source file to LLVM IR.</p>
-<p>If a source file path is specified, the output is written to the same path with a &#8216;.ll&#8217; extension.</p>
+<p><strong>glucose</strong> compiles a single glucose source file to LLVM IR or JavaScript source.</p>
+<p>If a source file path is specified, the output is written to the same path with an extension based on
+the output type (&#8216;.ll&#8217; or &#8216;.js&#8217;).</p>
 <p>If no path is specified, <strong>glucose</strong> compiles standard input to standard output.</p>
 </div>
 <div class="section" id="options">
 <h1>Options<a class="headerlink" href="#options" title="Permalink to this headline">¶</a></h1>
+<dl class="option">
+<dt id="cmdoption-glucose-t">
+<code class="descname">-t</code><code class="descclassname"> --output-type={ll|js}</code><a class="headerlink" href="#cmdoption-glucose-t" title="Permalink to this definition">¶</a></dt>
+<dd><p>Produce the type of output associated with the given extension: LLVM IR (default) or JavaScript source.</p>
+</dd></dl>
+
 <dl class="option">
 <dt id="cmdoption-glucose-?">
 <code class="descname">-?</code><code class="descclassname"> --help</code><a class="headerlink" href="#cmdoption-glucose-?" title="Permalink to this definition">¶</a></dt>
@@ -167,7 +172,7 @@
       
     </p>
     <p>
-        &copy; Copyright 2016, Neil Vice.<br/>
+        &copy; Copyright 2017, Neil Vice.<br/>
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.4.6.<br/>
     </p>
   </div>
