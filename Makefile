@@ -21,6 +21,7 @@ example.exe : example.o src\RT\rt.o
 	stack exec glucose -- -t js $<
 
 $(BIN)\glucose.exe : build
+	echo $(BIN)
 
 build :
 	stack build --fast

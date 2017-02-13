@@ -11,4 +11,4 @@ alias :: FromSource Text -> FromSource Text -> Type Checked -> FromSource (Defin
 alias to from ty = definition to $ reference Global from ty
 
 aliasAnywhere :: Text -> Text -> Type Checked -> FromSource (Definition Checked)
-aliasAnywhere to from ty = definitionAnywhere to $ Reference Global (Identifier from) ty
+aliasAnywhere to from ty = definitionAnywhere to $ Reference Global (Identifier from) ty ty

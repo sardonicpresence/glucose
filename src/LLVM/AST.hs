@@ -1,6 +1,7 @@
 module LLVM.AST where
 
 import Data.List
+import Data.Maybe
 import LLVM.Name
 
 data Module = Module Target [Global] deriving (Eq)
@@ -28,6 +29,7 @@ data Assignment = Call Expression [Expression]
 
 data Terminator = Return Expression
                 | Branch Expression Name Name
+                | Unreachable
   deriving (Eq)
 
 data Expression = Literal Literal
@@ -81,7 +83,7 @@ instance Show Global where
   show (Alias to from ty) =
     global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show ty ++ "* " ++ global from ++ "\n"
   show (FunctionDefinition name linkage args blocks) =
-    "define " ++ withSpace linkage ++ show (typeOf $ last blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
+    "define " ++ withSpace linkage ++ show (defReturnType blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
               ++ " {\n" ++ concatMap show blocks ++ "}\n"
   show (TypeDef name ty) = local name ++ " = type " ++ show ty ++ "\n"
   show (FunctionDeclaration name ty) =
@@ -109,6 +111,7 @@ instance Show Assignment where
 instance Show Terminator where
   show (Return expr) = "ret " ++ withType expr
   show (Branch cond ifTrue ifFalse) = "br " ++ withType cond ++ ", label " ++ local ifTrue ++ ", label " ++ local ifFalse
+  show Unreachable = "unreachable"
 
 instance Show BinaryOp where
   show And = "and"
@@ -199,7 +202,7 @@ class Typed a where
 instance Typed Global where
   typeOf (VariableDefinition _ _ expr) = typeOf expr
   typeOf (Alias _ _ ty) = Ptr ty
-  typeOf (FunctionDefinition _ _ args blocks) = Function (typeOf $ last blocks) $ map typeOf args
+  typeOf (FunctionDefinition _ _ args blocks) = Function (defReturnType blocks) $ map typeOf args
   typeOf (TypeDef _ ty) = ty
   typeOf (FunctionDeclaration _ ty) = ty
 
@@ -225,7 +228,7 @@ instance Typed Assignment where
 
 instance Typed Terminator where
   typeOf (Return expr) = typeOf expr
-  typeOf Branch{} = Void
+  typeOf _ = Void
 
 instance Typed Expression where
   typeOf (Literal value) = typeOf value
@@ -265,6 +268,16 @@ returnType :: Type -> Type
 returnType (Ptr a) = returnType a
 returnType (Function a _) = a
 returnType a = error $ "cannot call a value of non-function type: " ++ show a
+
+defReturnType :: [BasicBlock] -> Type
+defReturnType blocks = fromMaybe Void . listToMaybe . filter (/= Void) $ map typeOf blocks
+
+sameRepresentation :: Type -> Type -> Bool
+sameRepresentation a b | a == b = True
+sameRepresentation (Custom _ a) b | sameRepresentation a b = True
+sameRepresentation a (Custom _ b) | sameRepresentation a b = True
+sameRepresentation (Ptr _) (Ptr _) = True
+sameRepresentation _ _ = False
 
 
 -- * Misc

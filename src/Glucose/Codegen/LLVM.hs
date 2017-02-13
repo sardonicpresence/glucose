@@ -39,7 +39,7 @@ runCodegen a = case runWriter a of
 definition :: Definition -> LLVMT Codegen ()
 definition (Definition (extract -> Identifier n) def) = let name = mkName n in
   mapLLVMT (withNewScope name) $ case extract def of
-    Reference Global (Identifier to) ty -> alias name (mkName to) (llvmType ty)
+    Reference Global (Identifier to) rep _ -> alias name (mkName to) (llvmType rep)
     Lambda args expr -> do
       tell $ Set.singleton $ GeneratedApply $ ApplyFn ApplyUnknown I32Rep [BoxRep] -- TODO: Debug only!
       void $ defineFunction name External (map (argument . extract) args) (ret =<< expression (extract expr))
@@ -50,19 +50,19 @@ argument (IR.Arg (Identifier name) ty) = LLVM.Arg (mkName name) (llvmType ty)
 
 expression :: IR.Expression -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
-expression (Reference Local (Identifier (mkName -> name)) ty) = pure $ LLVM.LocalReference name (llvmType ty)
-expression (Reference Global (Identifier (mkName -> name)) ty) =
-  let ref = LLVM.GlobalReference name (llvmType ty)
-   in case ty of
+expression (Reference Local (Identifier (mkName -> name)) rep _) = pure $ LLVM.LocalReference name (llvmType rep)
+expression (Reference Global (Identifier (mkName -> name)) rep _) =
+  let ref = LLVM.GlobalReference name (llvmType rep)
+   in case rep of
         IR.Function{} -> pure ref
         _ -> load ref
 expression (Constructor _ index) = pure $ i32 index
 expression (Lambda args def) = withNewGlobal $ \name -> buildLambda name Private (map extract args) (extract def)
 expression (Apply (extract -> f) (extract -> args)) = case flattenApply f args of
-  Application root calls partial -> maybe full partialApply partial where
+  Application rep root calls partial -> maybe full partialApply partial where
     full = do
       fn <- expression root
-      let tys = tail $ scanl applicationResult (IR.typeOf root) calls
+      let tys = tail $ scanl applicationResult (llvmType rep) calls
       foldlM genCall fn $ zip calls tys
 
 buildLambda :: Name -> Linkage -> [IR.Arg] -> IR.Expression -> LLVM LLVM.Expression
@@ -96,14 +96,27 @@ buildClosure f args = do
 partialApply :: Partial -> LLVM LLVM.Expression
 partialApply _ = undefined -- TODO: partial application
 
-genCall :: LLVM.Expression -> ([IR.Expression], IR.Type) -> LLVM LLVM.Expression
+genCall :: LLVM.Expression -> ([IR.Expression], LLVM.Type) -> LLVM LLVM.Expression
 genCall fn (params, ty) = do
-  ssaArgs <- traverse (fmap asArg . expression) params
-  ssaFn <- asFunction fn $ LLVM.Ptr $ llvmType ty
-  LLVM.call ssaFn ssaArgs
+  ssaArgs <- zipWithM asArg (LLVM.argTypes ty) =<< traverse expression params
+  case ty of
+    LLVM.Function{} -> do
+      ssaFn <- asFunction fn $ LLVM.Ptr ty
+      LLVM.call ssaFn ssaArgs
+    _ -> error "Unsupported" -- TODO
 
-asArg :: LLVM.Expression -> LLVM.Expression
-asArg = bitcastFunctionRef
+getApply :: LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
+getApply returnTy tys = do
+  let genType = GeneratedApply $ ApplyFn ApplyUnknown (typeRep returnTy) (map typeRep tys)
+  tell $ Set.singleton genType
+  pure $ LLVM.GlobalReference (generatedName genType) undefined -- TODO
+
+asArg :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
+asArg ty arg | ty == LLVM.typeOf arg = pure arg
+asArg ty arg | sameRepresentation ty (LLVM.typeOf arg) = bitcast arg ty
+asArg ty arg | Ptr ty == LLVM.typeOf arg = load arg
+asArg ty arg | sameRepresentation (Ptr ty) (LLVM.typeOf arg) = bitcast arg (Ptr ty) >>= load
+asArg ty arg = error $ "Cannot apply expression of type " ++ show (LLVM.typeOf arg) ++ " as argument of type " ++ show ty
 
 asFunction :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
 asFunction expr ty = case LLVM.typeOf expr of
@@ -114,11 +127,13 @@ bitcastFunctionRef :: LLVM.Expression -> LLVM.Expression
 bitcastFunctionRef (LLVM.GlobalReference name ty@LLVM.Function{}) = LLVM.BitcastGlobalRef name ty box
 bitcastFunctionRef a = a
 
-applicationResult :: IR.Type -> [IR.Expression] -> IR.Type
+applicationResult :: LLVM.Type -> [IR.Expression] -> LLVM.Type
 applicationResult f [] = f
-applicationResult f (_:as) = case f of
-  IR.Function{} -> applicationResult f as
-  _ -> error $ "cannot apply arguments to expression of type: " ++ show f
+applicationResult (LLVM.Custom name f) as = LLVM.Custom name $ applicationResult f as
+applicationResult f@LLVM.Ptr{} _ = f
+applicationResult (LLVM.Function result [_]) (_:as) = applicationResult result as
+applicationResult (LLVM.Function result (_:args)) (_:as) = applicationResult (LLVM.Function result args) as
+applicationResult f _ = error $ "cannot apply arguments to expression of type: " ++ show f
 
 nameOf :: LLVM.Expression -> Name
 nameOf (LLVM.LocalReference n _) = n

@@ -27,7 +27,7 @@ expression (AST.Apply f a) = IR.Apply <$> traverse expression f <*> traverse val
 
 value :: Error m => AST.Value -> m (IR.Expression Unchecked)
 value (AST.Literal lit) = IR.Literal <$> literal lit
-value (AST.Variable name) = pure $ IR.Reference UnknownKind name Unknown
+value (AST.Variable name) = pure $ IR.Reference UnknownKind name Unknown Unknown
 value (AST.Lambda args expr) = IR.Lambda <$> mapM (traverse arg) args <*> traverse expression expr
 
 arg :: Error m => Identifier -> m (IR.Arg Unchecked)

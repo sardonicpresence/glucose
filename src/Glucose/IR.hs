@@ -14,7 +14,7 @@ deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Definition ann)
 
 data Expression ann
   = Literal Literal
-  | Reference (RefKind ann) Identifier (Type ann)
+  | Reference (RefKind ann) Identifier (Type ann) (Type ann)
   | Constructor (FromSource Identifier) Int -- TODO: does not belong
   | Lambda [FromSource (Arg ann)] (FromSource (Expression ann))
   | Apply (FromSource (Expression ann)) (FromSource (Expression ann))
@@ -56,7 +56,7 @@ instance Annotations ann => Show (Definition ann) where
 
 instance Annotations ann => Show (Expression ann) where
   show (Literal lit) = show lit `withType` (typeOf lit :: Type ann)
-  show (Reference kind name ty) = (show name `withRefKind` kind) `withType` ty -- TODO: include arity
+  show (Reference kind name _ ty) = (show name `withRefKind` kind) `withType` ty -- TODO: include arity
   show (Constructor typeName id) = show typeName ++ "#" ++ show id
   show (Lambda args value) = "\\" ++ unwords (map (show.extract) args) ++ " -> " ++ show (extract value)
   show (Apply expr arg) = show (extract expr) ++ " (" ++ show (extract arg) ++ ")"
@@ -78,7 +78,7 @@ instance Annotations ann => Typed (Definition ann) ann where
 
 instance Annotations ann => Typed (Expression ann) ann where
   typeOf (Literal a) = typeOf a
-  typeOf (Reference _ _ ty) = ty
+  typeOf (Reference _ _ _ ty) = ty
   typeOf (Constructor typeName _) = mkADT (extract typeName)
   typeOf (Lambda args expr) = go 0 args where
     go _ [] = typeOf $ extract expr

@@ -23,14 +23,14 @@ type Type = IR.Type IR.Checked
 -- * Apply
 
 -- | Chain of function applications with an optional trailing partial application
-data Application = Application Expression [[Expression]] (Maybe Partial) deriving (Show)
+data Application = Application Type Expression [[Expression]] (Maybe Partial) deriving (Show)
 data Partial = Partial Type [Expression] deriving (Show)
 
 flattenApply :: Expression -> Expression -> Application
 flattenApply f a = go f [a] where
   go f args = case f of
     Apply (extract -> g) (extract -> x) -> go g (x:args)
-    Reference _ _ ty -> uncurry (Application f) (apply ty [] args)
+    Reference _ _ rep ty -> uncurry (Application rep f) (apply ty [] args)
     Lambda _ _ -> undefined
     Constructor _ _ -> error "Cannot supply arguments to a constructor"
     Literal _ -> error "Cannot supply arguments to a literal!" -- TODO: improve & move
@@ -51,7 +51,7 @@ bound = prism' Bound $ \case Bound a -> Just a; _ -> Nothing
 
 types :: Traversal' Expression Type
 types f a@Literal{} = f (typeOf a) $> a
-types f (Reference kind name ty) = Reference kind name <$> prims f ty
+types f (Reference kind name rep ty) = Reference kind name rep <$> prims f ty
 types f (Constructor tyName idx) = injectType <$> prims f (ADT $ extract tyName) where
   injectType ty' = let tyName' = case ty' of ADT n' -> tyName $> n'; _ -> tyName in Constructor tyName' idx
 types f (Lambda args expr) = Lambda <$> traverse (traverse $ argType f) args <*> traverse (types f) expr where
@@ -80,7 +80,7 @@ rebindType :: Identifier -> Type -> Expression -> Expression
 rebindType name = set $ types . filtered (== Bound name)
 
 captures :: Expression -> Set.Set Arg
-captures (Reference Local name ty) = Set.singleton $ Arg name ty
+captures (Reference Local name _ ty) = Set.singleton $ Arg name ty
 captures (Apply expr arg) = captures (extract expr) <> captures (extract arg)
 captures (Lambda args value) = captures (extract value) Set.\\ Set.fromList (map extract args)
 captures _ = mempty

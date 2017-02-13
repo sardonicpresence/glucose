@@ -82,7 +82,7 @@ typeCheckDefinition def = define (identifier def) =<< traverse go def where
 typeCheckExpression :: Error m => FromSource (Expression Unchecked) -> TypeCheck m (Expression Checked)
 typeCheckExpression expr = case extract expr of
   Literal literal -> pure $ Literal literal
-  Reference _ identifier _ -> do
+  Reference _ identifier _ _ -> do
     value <- gets $ lookupVariable identifier . namespace
     maybe (typeCheckIdentifier $ identifier <$ expr) fromVariable $ snd <$> value
   Constructor typeName index -> do
@@ -141,10 +141,10 @@ fromVariable (NS.Definition def) = referenceTo $ extract def
 fromVariable (NS.Arg arg) = pure $ referenceArg $ extract arg
 
 referenceArg :: Arg Checked -> Expression Checked
-referenceArg (Arg name ty) = Reference Local name ty
+referenceArg (Arg name ty) = Reference Local name ty ty
 
 referenceTo :: Monad m => Definition Checked -> TypeCheck m (Expression Checked)
-referenceTo def = freeTypes newVar $ Reference Global (identifier def) (typeOf def)
+referenceTo def = freeTypes newVar $ Reference Global (identifier def) (typeOf def) (typeOf def)
 
 valueOf :: Definition Checked -> Expression Checked
 valueOf (Definition _ value) = extract value

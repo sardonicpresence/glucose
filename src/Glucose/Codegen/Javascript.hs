@@ -47,7 +47,7 @@ definition (Definition (extract -> Identifier name) (extract -> Lambda args expr
     "function " <> name <> "(" <> intercalate ", " (map (arg.extract) args) <> ") {\n" <>
     "  return " <> expr <> "\n" <>
     "}\n"
-definition (Definition (extract -> Identifier name) (extract -> Reference Global (Identifier target) _)) = do
+definition (Definition (extract -> Identifier name) (extract -> Reference Global (Identifier target) _ _)) = do
   targetUndefined <- uses _2 (Set.member $ Identifier target)
   if targetUndefined
     then pure Nothing
@@ -61,7 +61,7 @@ definition (Definition (extract -> Identifier name) def) = do
 
 expression :: Expression -> Codegen Text
 expression (Literal a) = pure . pack $ show a
-expression (Reference _ (Identifier a) _) = pure a
+expression (Reference _ (Identifier a) _ _) = pure a
 expression (Constructor (extract -> typeName) _) = do
   typeDefined <- uses _1 (Set.member typeName)
   unless typeDefined $ do
@@ -75,7 +75,7 @@ expression (Lambda args expr) = do
     " return " <> expr <> " " <>
     "}"
 expression (Apply (extract -> f) (extract -> a)) = case flattenApply f a of
-  Application root calls partial -> maybe fullApply partialApply partial where
+  Application _ root calls partial -> maybe fullApply partialApply partial where
     fullApply = foldl (<>) <$> expression root <*> traverse (fmap parenList . traverse expression) calls
     -- TODO: variable names can conflict with variables from outer scopes
     partialApply (Partial ty args) = do

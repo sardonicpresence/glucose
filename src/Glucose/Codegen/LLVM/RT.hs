@@ -1,7 +1,7 @@
 module Glucose.Codegen.LLVM.RT
 (
   functionDeclarations, heapAlloc, heapAllocN,
-  Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..), generateFunction
+  Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..), generateFunction, generatedName, typeRep
 ) where
 
 import Control.Monad.Identity
@@ -43,6 +43,11 @@ data ApplyType = ApplyUnknown | ApplyPartial -- TODO
 data Representation = I32Rep | F64Rep | BoxRep
   deriving (Eq, Ord)
 
+typeRep :: Type -> Representation
+typeRep (I _) = I32Rep
+typeRep F64 = F64Rep
+typeRep _ = BoxRep
+
 repType :: Representation -> Type
 repType I32Rep = I 32
 repType F64Rep = F64
@@ -79,6 +84,10 @@ generateFunction = evalLLVM . \case
           label "Trivial"
           fp <- bitcast (argReference fn) $ functionType resultType argTypes
           ret =<< call fp (map argReference args)
-
-          -- label "Nontrivial"
-  -- generate _ = undefined -- TODO
+          label "Nontrivial"
+          isClosure <- icmp Eq tag $ i32 0
+          br isClosure "Closure" "Function"
+          label "Function"
+          unreachable -- TODO
+          label "Closure"
+          unreachable -- TODO

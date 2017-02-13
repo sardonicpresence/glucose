@@ -133,6 +133,9 @@ ret = terminator . Return
 br :: Monad m => Expression -> Name -> Name -> LLVMT m ()
 br = ((terminator .) .) . Branch
 
+unreachable :: Monad m => LLVMT m ()
+unreachable = terminator Unreachable
+
 assign :: Monad m => Assignment -> LLVMT m Expression
 assign assignment = do
   name <- newLocal

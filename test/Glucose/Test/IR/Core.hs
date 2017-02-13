@@ -30,4 +30,4 @@ definition :: FromSource Text -> FromSource (Expression ann) -> FromSource (Defi
 definition name value = Definition <$> duplicate (Identifier <$> name) <*> duplicate value
 
 reference :: RefKind ann -> FromSource Text -> Type ann -> FromSource (Expression ann)
-reference kind name ty = (\n -> Reference kind (Identifier n) ty) <$> name
+reference kind name ty = (\n -> Reference kind (Identifier n) ty ty) <$> name
