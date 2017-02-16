@@ -22,6 +22,7 @@ showToken input t = let s = showSource t input in case t ^. _fromSource of
   EndOfDefinition -> (if Text.null s then "implicit" else "explicit") <> " end of definition"
   BeginLambda -> "lambda '" <> s <> "'"
   Identifier _ -> "identifier '" <> s <> "'"
+  Keyword _ -> "keyword '" <> s <> "'"
   Operator _ -> "operator '" <> s <> "'"
   IntegerLiteral _ -> "integer literal '" <> s <> "'"
   FloatLiteral _ -> "fractional literal '" <> s <> "'"

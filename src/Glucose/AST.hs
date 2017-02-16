@@ -7,10 +7,13 @@ import Glucose.Parser.Source
 
 data Module = Module [FromSource Definition] deriving (Eq, Show)
 
-data Definition = Definition (FromSource Identifier) (FromSource Expression) deriving (Eq, Show)
+data Definition = Definition (FromSource Identifier) (FromSource Expression)
+                | TypeDefinition (FromSource Identifier) [FromSource Identifier]
+  deriving (Eq, Show)
 
 instance Bound Definition where
   identifier (Definition name _) = extract name
+  identifier (TypeDefinition name _) = extract name
 
 data Expression
   = Literal Literal

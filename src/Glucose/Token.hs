@@ -8,40 +8,52 @@ import Glucose.Lexer.Char
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
+data Keyword
+  = Type
+  deriving (Eq, Ord)
+
+instance Show Keyword where
+  show Type = "type"
+
 data Operator
   = Assign
   | Arrow
+  | Bar
   | CustomOperator Text
   deriving (Eq, Ord)
 
 instance Show Operator where
   show Assign = "="
   show Arrow = "->"
+  show Bar = "|"
   show (CustomOperator s) = unpack s
-
-_assign :: Prism' Operator ()
-_assign = prism' undefined $ \case Assign -> Just (); _ -> Nothing
 
 data Token
   = EndOfDefinition
   | BeginLambda
   | Identifier Text
+  | Keyword Keyword
   | Operator Operator
   | IntegerLiteral Integer
   | FloatLiteral Rational
   deriving (Eq, Ord, Show)
 
+instance Arbitrary Keyword where
+  arbitrary = oneof [ pure Type ]
+
 instance Arbitrary Operator where
   arbitrary = oneof
     [ pure Assign
     , pure Arrow
-    , CustomOperator . pack <$> (listOf1 (arbitrary `suchThat` isOperator) `suchThat` (not . flip elem ["=", "->"])) ]
+    , pure Bar
+    , CustomOperator . pack <$> (listOf1 (arbitrary `suchThat` isOperator) `suchThat` (not . flip elem ["=", "->", "|"])) ]
 
 instance Arbitrary Token where
   arbitrary = oneof
     [ pure EndOfDefinition
     , pure BeginLambda
     , Identifier . identify <$> arbitrary
+    , Keyword <$> arbitrary
     , Operator <$> arbitrary
     , IntegerLiteral <$> arbitrary `suchThat` (>=0)
     , FloatLiteral <$> do
@@ -58,6 +70,9 @@ _beginLambda = prism' (const BeginLambda) $ \case BeginLambda -> Just (); _ -> N
 
 _identifier :: Prism' Token Text
 _identifier = prism' Identifier $ \case Identifier a -> Just a; _ -> Nothing
+
+_keyword :: Prism' Token Keyword
+_keyword = prism' Keyword $ \case Keyword a -> Just a; _ -> Nothing
 
 _operator :: Prism' Token Operator
 _operator = prism' Operator $ \case Operator a -> Just a; _ -> Nothing

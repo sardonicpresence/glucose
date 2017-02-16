@@ -1,7 +1,7 @@
 module Glucose.Parser.Monad where
 
 import Control.Applicative
-import Control.Lens
+import Control.Lens hiding (traverse1)
 import Control.Monad.Throw
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -85,3 +85,13 @@ lexeme label f = parser $ \case
 
 parseError :: Ord l => EOFOr t -> EOFOr String -> Parser l t ts a
 parseError u e = asks ($ u) >>= \l -> throwError $ ParseError l u [e]
+
+-- * Utilities
+
+separatedBy :: Alternative f => f a -> f b -> f [a]
+separatedBy p sep = (<|) <$> p <*> many (sep *> p)
+
+traverse1 :: Applicative f => (a -> f b) -> [a] -> f [b]
+traverse1 _ [] = errorWithoutStackTrace "traverse1: empty structure"
+traverse1 f [a] = pure <$> f a
+traverse1 f (a:as) = (:) <$> f a <*> traverse1 f as

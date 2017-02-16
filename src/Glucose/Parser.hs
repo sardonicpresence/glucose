@@ -1,8 +1,8 @@
 module Glucose.Parser where
 
-import Control.Applicative
+import Control.Applicative hiding ((<**>))
 import Control.Comonad
-import Control.Lens
+import Control.Lens hiding (traverse1)
 import Data.Monoid
 
 import Glucose.AST as AST
@@ -14,20 +14,38 @@ import Glucose.Parser.EOFOr
 import Glucose.Parser.Monad
 import Glucose.Parser.Source
 
-infixl 4 <$$>
+infixl 4 <$$>, <$$, <**>, <**, **>
 
 (<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
 (<$$>) = (<$>) . (<$>)
+
+(<$$) :: (Functor f, Functor g) => a -> f (g b) -> f (g a)
+a <$$ b = const a <$$> b
+
+(<**>) :: (Applicative f, Applicative g) => f (g (a -> b)) -> f (g a) -> f (g b)
+f <**> a = (<*>) <$> f <*> a
+
+(**>) :: (Applicative f, Applicative g) => f (g a) -> f (g b) -> f (g b)
+a **> b = flip const <$$> a <**> b
+
+(<**) :: (Applicative f, Applicative g) => f (g a) -> f (g b) -> f (g a)
+a <** b = const <$$> a <**> b
 
 type Parse a = Parser Location (FromSource Token) [FromSource Token] (FromSource a)
 
 parse :: (MonadThrow (ParseError Location (FromSource Token)) m) => Location -> [FromSource Token] -> m Module
 parse eofLocation = runParser parser (maybeEOF eofLocation startLocation) where
-  parser = Module <$> many definition <* eof
+  parser = Module <$> many ((definition <|> typeDefinition) <* endOfDefinition) <* eof
 
 definition :: Parse AST.Definition
-definition = toDefinition <$> identifier <* operator Assign <*> expression <* endOfDefinition where
-  toDefinition a b = AST.Definition <$> duplicate a <*> duplicate b
+definition = AST.Definition <$$> name <**> expr where
+  name = duplicate <$> identifier <* operator Assign
+  expr = duplicate <$> expression
+
+typeDefinition :: Parse AST.Definition
+typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors where
+  name = duplicate <$> identifier <* operator Assign
+  constructors = traverse1 duplicate <$> identifier `separatedBy` operator Bar
 
 expression :: Parse AST.Expression
 expression = AST.Variable <$$> identifier
@@ -39,8 +57,11 @@ endOfDefinition = (lexeme "end of definition" . traverse $ is _endOfDefinition) 
 identifier :: Parse AST.Identifier
 identifier = lexeme "identifier" . traverse $ AST.Identifier <$$> preview _identifier
 
+keyword :: Keyword -> Parse ()
+keyword kw = lexeme ("\"" ++ show kw ++ "\"") . traverse . is $ _keyword . filtered (kw ==)
+
 operator :: Operator -> Parse ()
-operator op = lexeme "operator" . traverse . is $ _operator . filtered (op ==)
+operator op = lexeme ("\"" ++ show op ++ "\"") . traverse . is $ _operator . filtered (op ==)
 
 literal :: Parse Literal
 literal = lexeme "literal" . traverse $ \t -> integerLiteral t <|> floatLiteral t where

@@ -10,7 +10,7 @@ of definitions is not significant.
 
 Source files are UTF-8 encoded and it is the intention that any
 alphanumeric character in any script may appear in variable names. Operators
-consist of sequences of the charactes ``~!@#$%^&*-+=<>.?:`` and this list is
+consist of sequences of the charactes ``~!@#$%^&|*-+=<>.?:`` and this list is
 likely to expand.
 
 All newline characters as well as paragraph separators and form feeds are

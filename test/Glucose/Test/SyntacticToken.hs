@@ -51,17 +51,15 @@ endsDefinition a | Text.null a = False
 endsDefinition a = isNewline (Text.last a)
 
 requiresGap :: Token -> Token -> Bool
-requiresGap (Identifier _) (Identifier _) = True
 requiresGap (Operator _) (Operator _) = True
-requiresGap (IntegerLiteral _) (Identifier _) = True
-requiresGap (FloatLiteral _) (Identifier _) = True
-requiresGap (Identifier _) (IntegerLiteral _) = True
-requiresGap (Identifier _) (FloatLiteral _) = True
-requiresGap (IntegerLiteral _) (IntegerLiteral _) = True
-requiresGap (IntegerLiteral _) (FloatLiteral _) = True
-requiresGap (FloatLiteral _) (IntegerLiteral _) = True
-requiresGap (FloatLiteral _) (FloatLiteral _) = True
-requiresGap _ _ = False
+requiresGap a b = isAlphanumeric a && isAlphanumeric b
+
+isAlphanumeric :: Token -> Bool
+isAlphanumeric (Identifier _) = True
+isAlphanumeric (Keyword _) = True
+isAlphanumeric (IntegerLiteral _) = True
+isAlphanumeric (FloatLiteral _) = True
+isAlphanumeric _ = False
 
 arbitraryWhitespace :: Gen Text
 arbitraryWhitespace = pack <$> listOf (arbitrary `suchThat` isSpace)
@@ -73,9 +71,8 @@ arbitraryRepresentation :: Token -> Gen Text
 arbitraryRepresentation EndOfDefinition = pure empty
 arbitraryRepresentation BeginLambda = pure "\\"
 arbitraryRepresentation (Identifier a) = pure a
-arbitraryRepresentation (Operator Assign) = pure "="
-arbitraryRepresentation (Operator Arrow) = pure "->"
-arbitraryRepresentation (Operator (CustomOperator a)) = pure a
+arbitraryRepresentation (Keyword keyword) = pure . pack $ show keyword
+arbitraryRepresentation (Operator op) = pure . pack $ show op
 arbitraryRepresentation (IntegerLiteral a) = do
   e <- choose (0, maxExponent a)
   let ePart = if e == 0 then "" else "e" ++ show e

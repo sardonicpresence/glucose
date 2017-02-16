@@ -37,6 +37,8 @@ instance Comonad FromSource where
   extract (FromSource _ a) = a
   extend f x@(FromSource s _) = FromSource s (f x)
 
+instance ComonadApply FromSource
+
 instance Foldable FromSource where
   foldMap f (FromSource _ a) = f a
 
