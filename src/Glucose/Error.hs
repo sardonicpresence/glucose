@@ -54,6 +54,7 @@ formatDetails source = \case
 
 formatList :: [Text] -> Text
 formatList [] = mempty
+formatList [a] = a
 formatList [a, b] = a <> " or " <> b
 formatList (a:as) = a <> ", " <> formatList as
 
