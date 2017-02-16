@@ -19,7 +19,7 @@ isIdentifier :: Char -> Bool
 isIdentifier c = isAlphaNum c || isMark c || generalCategory c == ConnectorPunctuation
 
 isOperator :: Char -> Bool
-isOperator c = c `elem` ("~!@#$%^&*-+=<>.?:" :: String)
+isOperator c = c `elem` ("~!@#$%^&|*-+=<>.?:" :: String)
 
 isSingleSpace :: Char -> Bool
 isSingleSpace ' ' = True

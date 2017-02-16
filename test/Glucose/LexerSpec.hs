@@ -32,6 +32,7 @@ spec = do
       tokens "\n\na\n  = \n 1 \n " `shouldBe` Right [Identifier "a", Operator Assign, IntegerLiteral 1]
     it "inserts implicit end-of-definition for unindented newlines" $
       tokens "\n\na\n  = \n1 \n b" `shouldBe` Right [Identifier "a", Operator Assign, EndOfDefinition, IntegerLiteral 1, Identifier "b"]
+    itParsesKeywords
     itParsesIntegerLiterals
     itParsesFractionalLiterals
     itCorrectlyParsesInfixApplication
@@ -41,13 +42,19 @@ spec = do
           eofLocation = Text.foldl (flip updateLocation) beginning source
        in tokenize source === Right (eofLocation, tokens)
 
+itParsesKeywords :: SpecWith ()
+itParsesKeywords = describe "correctly parses keywords" $
+  mapM_ correctlyParsesKeyword [Type] where
+    correctlyParsesKeyword keyword = itCorrectlyParses ("=" ++ show keyword ++ "=")
+      [Operator Assign, Keyword keyword, Operator Assign]
+
 itCorrectlyParsesInfixApplication :: SpecWith ()
 itCorrectlyParsesInfixApplication = describe "correctly parses infix application" $
-  sequence_ $ concatMap (\op -> map ($op) [itParsesInfix a b | a <- argTypes, b <- argTypes])
-    ["%~", ".#", "^.", "..", ".-"]
+  sequence_ $ concatMap (\op -> map ($op) [itParsesInfix a b | a <- argTypes, b <- argTypes]) $
+    map (CustomOperator . pack) ["%~", ".#", "^.", "..", ".-"] ++ [Assign, Arrow, Bar]
 
-itParsesInfix :: Argument -> Argument -> String -> SpecWith ()
-itParsesInfix a b testOp = let tokenOp = Operator (CustomOperator $ pack testOp) in
+itParsesInfix :: Argument -> Argument -> Operator -> SpecWith ()
+itParsesInfix a b op = let testOp = show op; tokenOp = Operator op in
   context ("with " ++ explain a ++ " and " ++ explain b ++ " arguments") $ do
     itCorrectlyParses (show a ++ testOp ++ show b) [token a, tokenOp, token b]
     itCorrectlyParses (show a ++ "\xa0 " ++ testOp ++ show b) [token a, tokenOp, token b]

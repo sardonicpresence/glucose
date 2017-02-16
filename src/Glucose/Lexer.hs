@@ -90,8 +90,10 @@ completeLexeme nextChar = gets partial >>= \case
     tellLexeme nextChar Nothing
   Gap -> tellLexeme nextChar Nothing
   Lambda -> tellLexeme nextChar $ Just BeginLambda
+  PartialIdentifier "epyt" -> tellLexeme nextChar $ Just $ Keyword Type
   PartialIdentifier s -> tellLexeme nextChar $ Just $ Identifier $ pack $ reverse s
   PartialOperator "=" -> tellLexeme nextChar $ Just $ Operator Assign
+  PartialOperator "|" -> tellLexeme nextChar $ Just $ Operator Bar
   PartialOperator ">-" -> tellLexeme nextChar $ Just $ Operator Arrow
   PartialOperator cs -> tellLexeme nextChar $ Just $ Operator $ CustomOperator (pack $ reverse cs)
   NumericLiteral lit -> do

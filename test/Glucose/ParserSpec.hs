@@ -39,6 +39,21 @@ spec = describe "parse" $ do
   it "errors on superfluous tokens after definition" $
     let b = Token.Identifier "b" `at` "1:7@6 - 1:7@6"
      in parseTokens "a=123 b" `shouldErrorWith` unexpectedToken "1:7@6" b ["end of definition","end of file"]
+  it "parses trivial type definition" $
+    let a = Identifier "a" `at` "1:6@5 - 1:6@5"
+        b = Identifier "b" `at` "1:8@7 - 1:8@7"
+     in parseTokens "type a=b" `shouldParseAs` [AST.TypeDefinition a [b] `at` "1:1@0 - 1:8@7"]
+  it "parses enum type definition" $
+    let a = Identifier "a" `at` "1:6@5 - 1:6@5"
+        b = Identifier "b" `at` "1:8@7 - 1:8@7"
+        c = Identifier "c" `at` "1:10@9 - 1:10@9"
+        d = Identifier "d" `at` "1:12@11 - 1:12@11"
+     in parseTokens "type a=b|c|d" `shouldParseAs` [AST.TypeDefinition a [b,c,d] `at` "1:1@0 - 1:12@11"]
+  it "errors on incomplete type definition" $ do
+    parseTokens "type" `shouldErrorWith` unexpectedEof "1:5@4" ["identifier"]
+    parseTokens "type a" `shouldErrorWith` unexpectedEof "1:7@6" ["\"=\""]
+    parseTokens "type a=" `shouldErrorWith` unexpectedEof "1:8@7" ["identifier"]
+    parseTokens "type a=b|" `shouldErrorWith` unexpectedEof "1:10@9" ["identifier"]
 
 parseTokens :: Text -> Either CompileError AST.Module
 parseTokens = uncurry parse <=< tokenise
