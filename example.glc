@@ -4,11 +4,15 @@ _test = 54.321e02
 foo
  =
   1e3
+That = that
 
 type
-     it=   this
+     it=   This
  |
-  That | theOther
+  that | theOther
+
+type other
+ = Another
 
 Bar =
  foo

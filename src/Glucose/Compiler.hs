@@ -2,6 +2,7 @@ module Glucose.Compiler (CompilerOutput(..), compile) where
 
 import Data.Bifunctor
 import Data.Text
+import Glucose.Desugar
 import Glucose.Error
 import Glucose.Lexer
 import Glucose.Parser
@@ -13,7 +14,7 @@ data CompilerOutput = LLVM | JavaScript
 
 -- | Compiles a single glucose source file into LLVM IR.
 compile :: CompilerOutput -> Text -> Either Text Text
-compile output source = format $ pure . codegen =<< typeCheck =<< uncurry parse =<< tokenise source
+compile output source = format $ pure . codegen =<< typeCheck =<< desugar =<< uncurry parse =<< tokenise source
   where format = bimap (formatError source) id
         codegen = pack . case output of
           LLVM -> show . LLVM.codegen

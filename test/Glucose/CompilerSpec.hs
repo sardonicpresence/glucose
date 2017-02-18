@@ -3,8 +3,15 @@ module Glucose.CompilerSpec (spec) where
 import Test.Prelude
 
 import Data.Foldable
+import Data.Monoid
 import Data.Text
 import Glucose.Compiler
+
+source :: Text
+source = "b=\x5d0\&_a0\n" <>
+         "\x5d0\&_a0 =\xa0\&123e01\n" <>
+         "_b\x5d5\&0=12.3e-01\f" <>
+         "type\xa0\&\x5d1_=  \x5d2_|\x5d3"
 
 spec :: Spec
 spec = describe "compile" $ do
@@ -14,15 +21,20 @@ spec = describe "compile" $ do
     compile LLVM " \n$~" `shouldErrorContaining` "$~"
     compile JavaScript " \n$~" `shouldErrorContaining` "$~"
   it "correctly compiles utf8 example to LLVM" $
-    unpack <$> compile LLVM "\x5d0\&_a0 =\xa0\&123e01\n_b\x5d5\&0=12.3e-01\fb=\x5d0\&_a0" `shouldBe`
-      Right ("@$5d0$_a0 = unnamed_addr constant i32 1230\n" ++
+    unpack <$> compile LLVM source `shouldBe`
+      Right ("@b = unnamed_addr alias i32, i32* @$5d0$_a0\n" ++
+             "@$5d0$_a0 = unnamed_addr constant i32 1230\n" ++
              "@_b$5d5$0 = unnamed_addr constant double 1.23\n" ++
-             "@b = unnamed_addr alias i32, i32* @$5d0$_a0\n")
+             "@$5d2$_ = unnamed_addr constant i32 0\n" ++
+             "@$5d3$ = unnamed_addr constant i32 1\n")
   it "correctly compiles utf8 example to JavaScript" $
-    unpack <$> compile JavaScript "\x5d0\&_a0 =\xa0\&123e01\n_b\x5d5\&0=12.3e-01\fb=\x5d0\&_a0" `shouldBe`
+    unpack <$> compile JavaScript source `shouldBe`
       Right ("\x5d0\&_a0 = 1230\n" ++
+             "b = \x5d0\&_a0\n" ++
              "_b\x5d5\&0 = 1.23\n" ++
-             "b = \x5d0\&_a0\n")
+             "\x5d1_ = function() {}\n" ++
+             "\x5d2_ = new \x5d1_()\n" ++
+             "\x5d3 = new \x5d1_()\n")
 
 forAllOutputs :: Applicative f => (CompilerOutput -> f a) -> f ()
 forAllOutputs f = traverse_ f [LLVM, JavaScript]

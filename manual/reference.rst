@@ -2,7 +2,8 @@ Language Reference
 ==================
 
 The **glucose** language is presently trivial and only supports the global
-declaration of 32-bit integer and 64-bit floating-point constants.
+declaration of 32-bit integer and 64-bit floating-point constants, as well
+as enumeration data types.
 
 A **glucose** source file consists of zero or more definitions, each starting
 at the beginning of a line, optionally seperated by white-space. The order
@@ -28,16 +29,16 @@ Identifiers are mangled to support LLVM IR with unsupported characters
 along with dollar signs being replaced with their Unicode code-point in
 hexadecimal surrounded by dollar signs e.g. Hebrew aleph becomes $5d0$.
 
-Definitions
-----------
+Variable Definitions
+--------------------
 
-Definitions bind a numeric constant to an identifier as either a 32-bit
-integer or a 64-bit floating-point value, either directly or based on the
-value of another constant.
+Variable definitions bind a numeric constant to an identifier as either a
+32-bit integer or a 64-bit floating-point value, either directly or based
+on the value of another constant.
 
-A definition must be positioned at the beginning of a line and consist of
-an identifier, equals character and either a numeric literal (e.g.
-``a = 1.23e4``) or identifier (e.g. ``a = b``).
+A variable definition must be positioned at the beginning of a line and
+consist of an identifier, equals character and either a numeric literal
+(e.g. ``a = 1.23e4``) or identifier (e.g. ``a = b``).
 
 Integer literals may be prefixed with redundent zeros and may have positive
 integer exponents (themselves potentially prefixed with zeros) e.g. ``012e03``
@@ -46,3 +47,18 @@ integer exponents (themselves potentially prefixed with zeros) e.g. ``012e03``
 Floating-point literals are distinguished from integer literals by the presence
 of a single decimal point followed by one or more digits that preceed any
 exponent and may have negative exponents e.g. ``01.2e-03`` (0.0012).
+
+Enum Types
+----------
+
+Enumeration type definitions define a set of constrctors that each bind a
+global 32-bit integer constant to an identifier. The constructors are
+given values unique for their type.
+
+A type definition must be positioned at the beginning of a line and consist
+of the keyword ``type``, a type identifier, an equals character, and one or
+more constructor identifiers separated by vertical bars e.g.
+``type Colour = Red | Green | Blue``.
+
+Constructors and variables share a single namespace and cannot have the same
+name. Type names occupy their own namespace.
