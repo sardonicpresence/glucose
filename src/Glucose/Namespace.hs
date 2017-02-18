@@ -1,22 +1,19 @@
-module Glucose.Namespace where
+module Glucose.Namespace
+(
+  Scope, Namespace, emptyNamespace, pushScope, popScope, declare, lookupVariable, lookupDefinition
+)
+where
 
 import Control.Applicative
 import Data.Map.Strict as Map
 import qualified Glucose.IR as IR
 import Glucose.Error
 import Glucose.Identifier
-import Glucose.Lexer.Location
 import Glucose.Parser.Source
 
-data Variable = Definition (FromSource IR.Definition)
+type Definition = IR.Definition IR.Checked
 
-instance Bound Variable where
-  identifier (Definition (FromSource _ def)) = identifier def
-
-locationOf :: Variable -> Location
-locationOf (Definition a) = startLocation a
-
-newtype Scope = Scope (Map Identifier Variable)
+newtype Scope = Scope (Map Identifier (FromSource Definition))
 
 newtype Namespace = Namespace [Scope]
 
@@ -31,24 +28,24 @@ pushScope (Namespace scopes) = Namespace $ Scope Map.empty : scopes
 popScope :: Namespace -> Namespace
 popScope (Namespace scopes) = Namespace $ tail scopes
 
-declare :: MonadThrow CompileError m => Variable -> Namespace -> m Namespace
-declare var ns = case lookupVariable (identifier var) ns of
-  Nothing -> pure $ declare_ var ns
-  Just (CurrentScope, prev) -> duplicateDefinition (locationOf var) (identifier var) (locationOf prev)
-  Just _ -> pure $ declare_ var ns -- TODO: warn about name shadowing
+declare :: MonadThrow CompileError m => FromSource Definition -> Namespace -> m Namespace
+declare def ns = case lookupVariable (identifier def) ns of
+  Nothing -> pure $ declare_ def ns
+  Just (CurrentScope, prev) -> duplicateDefinition (startLocation def) (identifier def) (startLocation prev)
+  Just _ -> pure $ declare_ def ns -- TODO: warn about name shadowing
 
-declare_ :: Variable -> Namespace -> Namespace
-declare_ var (Namespace []) = Namespace [Scope $ Map.insert (identifier var) var Map.empty]
-declare_ var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identifier var) var s) : ss
+declare_ :: FromSource Definition -> Namespace -> Namespace
+declare_ def (Namespace []) = Namespace [Scope $ Map.insert (identifier def) def Map.empty]
+declare_ def (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identifier def) def s) : ss
 
-lookupVariable :: Identifier -> Namespace -> Maybe (ScopeLevel, Variable)
+lookupVariable :: Identifier -> Namespace -> Maybe (ScopeLevel, FromSource Definition)
 lookupVariable _ (Namespace []) = Nothing
 lookupVariable n (Namespace (Scope s:ss)) = (CurrentScope, ) <$> Map.lookup n s <|> go ss where
   go [] = Nothing
   go [Scope s] = (TopLevel, ) <$> Map.lookup n s
   go (Scope s:ss) = (ParentScope, ) <$> Map.lookup n s <|> go ss
 
-lookupDefinition :: Identifier -> Namespace -> Maybe (FromSource IR.Definition)
+lookupDefinition :: Identifier -> Namespace -> Maybe (FromSource Definition)
 lookupDefinition n (Namespace ss) = go ss where
   go [] = Nothing
-  go (Scope s : ss) = (Map.lookup n s >>= \case Definition def -> Just def) <|> go ss
+  go (Scope s : ss) = Map.lookup n s <|> go ss

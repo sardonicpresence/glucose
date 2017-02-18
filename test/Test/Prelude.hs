@@ -5,6 +5,6 @@ module Test.Prelude
   module Test.Utils
 ) where
 
-import Test.Hspec
+import Test.Hspec hiding (shouldBe)
 import Test.QuickCheck
 import Test.Utils

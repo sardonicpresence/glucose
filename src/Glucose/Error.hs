@@ -43,7 +43,7 @@ formatDetails source = \case
     ("\nexpecting " <>) `ifNotNull` formatList expectations
     where fromUnexpected = either const $ maybeEOF (const "end of file") (flip showToken)
   DuplicateDefinition name prevLoc ->
-    "duplicate definition of ''" <> pack (show name) <> "'\n" <>
+    "duplicate definition of '" <> pack (show name) <> "'\n" <>
     "previously defined at " <> showLocation prevLoc
   UnrecognisedVariable name ->
     "unrecognised variable '" <> pack (show name) <> "'"

@@ -1,5 +1,5 @@
 name:                glucose
-version:             0.0.4
+version:             0.0.5
 synopsis:            A strongly-typed functional programming language.
 description:         Please see README.md
 homepage:            https://github.com/sardonicpresence/glucose#readme
@@ -33,6 +33,7 @@ library
                      , Glucose.Parser.Monad
                      , Glucose.Parser.Source
                      , Glucose.AST
+                     , Glucose.Desugar
                      , Glucose.Codegen.JavaScript
                      , Glucose.Codegen.LLVM
                      , Glucose.Error
@@ -58,6 +59,8 @@ library
                      , RankNTypes
                      , ConstraintKinds
                      , GeneralizedNewtypeDeriving
+                     , UndecidableInstances
+                     , StandaloneDeriving
   default-language:    Haskell2010
 
 executable glucose
@@ -81,13 +84,16 @@ test-suite glucose-test
                      , Glucose.Codegen.JavaScriptSpec
                      , Glucose.Codegen.LLVMSpec
                      , Glucose.TypeCheckerSpec
+                     , Glucose.DesugarSpec
                      , Glucose.ParserSpec
                      , Glucose.LexerSpec
                      , Glucose.Test.Source
                      , Glucose.Test.SyntacticToken
                      , Glucose.Test.AST
                      , Glucose.Test.Error
-                     , Glucose.Test.IR
+                     , Glucose.Test.IR.Core
+                     , Glucose.Test.IR.Checked
+                     , Glucose.Test.IR.Unchecked
                      , Test.Utils
                      , Test.Prelude
   build-depends:       base
@@ -95,6 +101,7 @@ test-suite glucose-test
                      , text
                      , hspec
                      , QuickCheck
+                     , comonad
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-extensions:  OverloadedStrings
   default-language:    Haskell2010

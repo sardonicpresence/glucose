@@ -10,7 +10,8 @@ import Glucose.Lexer.Location
 data SourceRange = SourceRange Location Location deriving (Eq, Ord)
 
 instance Show SourceRange where
-  showsPrec d (SourceRange start end) = showParen (d>10) $ shows start . showString " - " . shows end
+  showsPrec d (SourceRange start end) = showParen (d>10) $ shows start .
+                                        if start /= end then showString "-" . shows end else id
 
 instance Read SourceRange where
   readsPrec d s0 = [ (SourceRange start end, s3)
