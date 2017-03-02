@@ -18,10 +18,10 @@ import qualified Glucose.TypeChecker as TC
 spec :: Spec
 spec = describe "typeCheck" $ do
   it "passes an empty module" $
-    typeCheck "" `shouldBe` Right (Module [])
+    typeCheck "" `shouldBe` Right (fromDefinitions [])
   it "type-checks a module with distinct definitions, aliases and enums" $
     let input = "a=c\nb=3.21\nc=123\ntype it=This|that\nd=a"
-        expected = Module
+        expected = fromDefinitions
           [ alias ("a" `at` "1:1@0-1:1@0") ("c" `at` "1:3@2-1:3@2") Integer
           , constant ("b" `at` "2:1@4-2:1@4") (FloatLiteral 3.21 `at` "2:3@6-2:6@9")
           , constant ("c" `at` "3:1@11-3:1@11") (IntegerLiteral 123 `at` "3:3@13-3:5@15")
@@ -29,15 +29,6 @@ spec = describe "typeCheck" $ do
           , constructor ("it" `at` "4:6@22-4:7@23") ("that" `at` "4:14@30-4:17@33") 1
           , alias ("d" `at` "5:1@35-5:1@35") ("a" `at` "5:3@37-5:3@37") Integer ]
     in typeCheck input `shouldBe` Right expected
-  it "fails a module with duplicate variable definitions" $
-    let input = "a=1\nb=2\na=3"
-    in typeCheck input `shouldErrorWith` compileError "3:1@8" (DuplicateDefinition (Identifier "a") (read "1:1@0"))
-  it "fails a module with duplicate constructor definitions" $
-    let input = "type A=a\ntype B=a|b"
-    in typeCheck input `shouldErrorWith` compileError "2:8@16" (DuplicateDefinition (Identifier "a") (read "1:8@7"))
-  it "fails a module with conflicting variable and constructor definitions" $
-    let input = "type A=a|b\nb=1"
-    in typeCheck input `shouldErrorWith` compileError "2:1@11" (DuplicateDefinition (Identifier "b") (read "1:10@9"))
   it "fails a module with duplicate type names" $
     let input = "type A=a\ntype A=b"
     in typeCheck input `shouldErrorWith` compileError "2:6@14" (DuplicateDefinition (Identifier "A") (read "1:6@5"))

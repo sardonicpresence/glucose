@@ -1,11 +1,16 @@
 module Glucose.Test.IR.Core where
 
+import Control.Arrow
 import Control.Comonad
+import Data.Map.List (fromList)
 import Data.Text (Text)
-import Glucose.Identifier (Identifier (..))
+import Glucose.Identifier (Identifier (..), identifier)
 import Glucose.IR
 import Glucose.Parser.Source
 import Glucose.Test.Source
+
+fromDefinitions :: [FromSource (Definition ann)] -> Module ann
+fromDefinitions = Module . fromList . map (identifier &&& id)
 
 -- * Without source locations
 

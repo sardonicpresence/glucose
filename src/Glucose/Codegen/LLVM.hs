@@ -1,12 +1,13 @@
 module Glucose.Codegen.LLVM (codegen) where
 
 import Control.Comonad
+import Data.Map.List (elems)
 import Glucose.Identifier
 import Glucose.IR
 import qualified LLVM.AST as LLVM
 
 codegen :: Module Checked -> LLVM.Module
-codegen (Module defs) = LLVM.Module $ map (definition . extract) defs
+codegen (Module defs) = LLVM.Module $ map (definition . extract) (elems defs)
 
 definition :: Definition Checked -> LLVM.Global
 definition (Definition (extract -> Identifier name) (extract -> def)) = let n = LLVM.mkName name in case def of

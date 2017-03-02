@@ -3,6 +3,7 @@ module Glucose.IR where
 
 import Control.Comonad
 import Data.List
+import Data.Map.List
 import Glucose.Identifier
 import Glucose.Parser.Source
 
@@ -36,7 +37,7 @@ instance Annotations Checked where
   a `withRefKind` Local = "%" ++ a
   a `withRefKind` Global = "@" ++ a
 
-data Module ann = Module [FromSource (Definition ann)]
+data Module ann = Module (MapList Identifier (FromSource (Definition ann)))
 deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Module ann)
 
 data Definition ann = Definition (FromSource Identifier) (FromSource (Expression ann))
@@ -58,7 +59,7 @@ instance Show (Type Checked) where
 -- * Show instances
 
 instance Annotations ann => Show (Module ann) where
-  show (Module defs) = intercalate "\n\n" $ map (show . extract) defs
+  show (Module (elems -> defs)) = intercalate "\n\n" $ map (show . extract) defs
 
 instance Annotations ann => Show (Definition ann) where
   show (Definition name value) =
@@ -102,4 +103,4 @@ instance Typed a ann => Typed (FromSource a) ann where
 -- * Bound instances
 
 instance Bound (Definition ann) where
-  identifier (Definition (FromSource _ name) _) = name
+  identifier (Definition (extract -> name) _) = name

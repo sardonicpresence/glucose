@@ -4,7 +4,9 @@ import Control.Comonad
 import Control.Lens
 import Control.Monad
 import Control.Monad.State
+import Data.Map.List hiding (insertOr)
 import Data.Map.Strict as Map
+import Data.Map.Utils
 import Data.Set as Set
 
 import Glucose.Error
@@ -29,11 +31,8 @@ _constructors = lens constructors (\a b -> a { constructors = b })
 _checking :: Lens' TypeChecker (Set Identifier)
 _checking = lens checking (\a b -> a { checking = b })
 
-mkTypeChecker :: Error m => [FromSource (Definition Unchecked)] -> m TypeChecker
-mkTypeChecker defs = TypeChecker emptyNamespace Map.empty Set.empty <$> toMap defs where
-  toMap = foldM insertInto Map.empty
-  insertInto m def = insertOr (identifier def) def (formatError def) m
-  formatError def = duplicateDefinition (startLocation def) (identifier def) . startLocation
+mkTypeChecker :: MapList Identifier (FromSource (Definition Unchecked)) -> TypeChecker
+mkTypeChecker = TypeChecker emptyNamespace Map.empty Set.empty . toMap
 
 push :: Error m => Identifier -> TypeCheck m ()
 push name = _checking %= Set.insert name
@@ -51,7 +50,7 @@ define name value = do
 type TypeCheck m a = StateT TypeChecker m a
 
 typeCheck :: Error m => Module Unchecked -> m (Module Checked)
-typeCheck (Module defs) = (Module <$>) . evalStateT (traverse go defs) =<< mkTypeChecker defs where
+typeCheck (Module defs) = Module <$> evalStateT (traverse go defs) (mkTypeChecker defs) where
   go def = do
     existing <- gets $ lookupDefinition (identifier def) . namespace
     maybe (typeCheckDefinition def) pure existing
@@ -83,13 +82,6 @@ typeCheckIdentifier :: Error m => FromSource Identifier -> TypeCheck m (Expressi
 typeCheckIdentifier variable = gets unchecked >>= \ns -> case Map.lookup (identifier variable) ns of
   Nothing -> unrecognisedVariable (startLocation variable) (identifier variable)
   Just def -> referenceTo . extract <$> typeCheckDefinition def
-
-insertOr :: (Applicative f, Ord k) => k -> v -> (v -> f (Map k v)) -> Map k v -> f (Map k v)
-insertOr k v onExisting m =
-  case Map.insertLookupWithKey noReplace k v m of
-    (Nothing, m') -> pure m'
-    (Just existing, _) -> onExisting existing
-  where noReplace _ _ a = a
 
 fromVariable :: FromSource (Definition Checked) -> Expression Checked
 fromVariable = referenceTo . extract
