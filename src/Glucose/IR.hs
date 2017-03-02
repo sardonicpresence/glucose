@@ -6,36 +6,6 @@ import Data.List
 import Glucose.Identifier
 import Glucose.Parser.Source
 
-class Annotations a where
-  data Type a :: *
-  data RefKind a :: *
-  mkADT :: Identifier -> Type a
-  intType :: Type a
-  floatType :: Type a
-  withType :: String -> Type a -> String
-  withRefKind :: String -> RefKind a -> String
-
-data Unchecked
-instance Annotations Unchecked where
-  data Type Unchecked = Unknown deriving (Eq)
-  data RefKind Unchecked = UnknownKind deriving (Eq)
-  mkADT = const Unknown
-  intType = Unknown
-  floatType = Unknown
-  a `withType` _ = a
-  a `withRefKind` _ = a
-
-data Checked
-instance Annotations Checked where
-  data Type Checked = Integer | Float | ADT Identifier deriving (Eq)
-  data RefKind Checked = Local | Global deriving (Eq)
-  mkADT = ADT
-  intType = Integer
-  floatType = Float
-  a `withType` ty = a ++ " : " ++ show ty
-  a `withRefKind` Local = "%" ++ a
-  a `withRefKind` Global = "@" ++ a
-
 data Module ann = Module [FromSource (Definition ann)]
 deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Module ann)
 
@@ -102,4 +72,36 @@ instance Typed a ann => Typed (FromSource a) ann where
 -- * Bound instances
 
 instance Bound (Definition ann) where
-  identifier (Definition (FromSource _ name) _) = name
+  identifier (Definition (extract -> name) _) = name
+
+-- * Annotations
+
+class Annotations a where
+  data Type a :: *
+  data RefKind a :: *
+  mkADT :: Identifier -> Type a
+  intType :: Type a
+  floatType :: Type a
+  withType :: String -> Type a -> String
+  withRefKind :: String -> RefKind a -> String
+
+data Unchecked
+instance Annotations Unchecked where
+  data Type Unchecked = Unknown deriving (Eq)
+  data RefKind Unchecked = UnknownKind deriving (Eq)
+  mkADT = const Unknown
+  intType = Unknown
+  floatType = Unknown
+  a `withType` _ = a
+  a `withRefKind` _ = a
+
+data Checked
+instance Annotations Checked where
+  data Type Checked = Integer | Float | ADT Identifier deriving (Eq)
+  data RefKind Checked = Local | Global deriving (Eq)
+  mkADT = ADT
+  intType = Integer
+  floatType = Float
+  a `withType` ty = a ++ " : " ++ show ty
+  a `withRefKind` Local = "%" ++ a
+  a `withRefKind` Global = "@" ++ a

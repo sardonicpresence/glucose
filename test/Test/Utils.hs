@@ -21,7 +21,7 @@ shouldShow a b = show a `shouldBe` b
 
 shouldBe :: (Eq a, Show a) => a -> a -> Expectation
 shouldBe a e | a == e = pure ()
-shouldBe a e = expectationFailure $ "expected:" ++ formatResult e ++ "\nbut got:" ++ formatResult a
+shouldBe a e = expectationFailure $ "expected:" ++ formatResult e ++ "\nbut got: " ++ formatResult a
 
 formatResult :: Show a => a -> String
 formatResult a = if '\n' `elem` show a
