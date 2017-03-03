@@ -1,6 +1,10 @@
 Release Notes
 =============
 
+v0.0.5
+ * Supports enum type definitions
+ * Fixed placing of aliases in JavaScript output
+
 v0.0.4
  * Supports transpiling to JavaScript source
  * Code generators support global aliases

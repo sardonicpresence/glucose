@@ -25,7 +25,7 @@ Identifiers consist of alphanumeric characters, marks, and punctuation
 considered connectors such as underscores, but may not begin with an
 ASCII digit.
 
-Identifiers are mangled to support LLVM IR with unsupported characters
+The LLVM code-generator mangles identifiers, with unsupported characters
 along with dollar signs being replaced with their Unicode code-point in
 hexadecimal surrounded by dollar signs e.g. Hebrew aleph becomes $5d0$.
 
@@ -51,9 +51,8 @@ exponent and may have negative exponents e.g. ``01.2e-03`` (0.0012).
 Enum Types
 ----------
 
-Enumeration type definitions define a set of constrctors that each bind a
-global 32-bit integer constant to an identifier. The constructors are
-given values unique for their type.
+An enumeration type definition defines a set of distinct constructors that
+share a user-defined type.
 
 A type definition must be positioned at the beginning of a line and consist
 of the keyword ``type``, a type identifier, an equals character, and one or

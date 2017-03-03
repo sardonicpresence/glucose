@@ -1,7 +1,9 @@
 dist
 dist-*
 cabal-dev
+*.exe
 *.o
+*.bc
 *.s
 *.opt
 *.hi
