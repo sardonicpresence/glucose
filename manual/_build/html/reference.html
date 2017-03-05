@@ -5,7 +5,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>Language Reference &#8212; glucose 0.0.4 documentation</title>
+    <title>Language Reference &#8212; glucose 0.0.5 documentation</title>
     
     <link rel="stylesheet" href="_static/basic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -16,7 +16,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    './',
-        VERSION:     '0.0.4',
+        VERSION:     '0.0.5',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true
@@ -30,7 +30,7 @@
     <script type="text/javascript" src="_static/js/jquery-fix.js"></script>
     <script type="text/javascript" src="_static/bootstrap-3.3.6/js/bootstrap.min.js"></script>
     <script type="text/javascript" src="_static/bootstrap-sphinx.js"></script>
-    <link rel="top" title="glucose 0.0.4 documentation" href="index.html" />
+    <link rel="top" title="glucose 0.0.5 documentation" href="index.html" />
     <link rel="next" title="Release Notes" href="releases.html" />
     <link rel="prev" title="User Guide" href="guide.html" />
 <meta charset='utf-8'>
@@ -52,7 +52,7 @@
         </button>
         <a class="navbar-brand" href="index.html">
           glucose</a>
-        <span class="navbar-text navbar-version pull-left"><b>0.0.4</b></span>
+        <span class="navbar-text navbar-version pull-left"><b>0.0.5</b></span>
       </div>
 
         <div class="collapse navbar-collapse nav-collapse">
@@ -86,7 +86,8 @@
       aria-labelledby="dLabelLocalToc"><ul>
 <li><a class="reference internal" href="#">Language Reference</a><ul>
 <li><a class="reference internal" href="#identifiers">Identifiers</a></li>
-<li><a class="reference internal" href="#definitions">Definitions</a></li>
+<li><a class="reference internal" href="#variable-definitions">Variable Definitions</a></li>
+<li><a class="reference internal" href="#enum-types">Enum Types</a></li>
 </ul>
 </li>
 </ul>
@@ -133,13 +134,14 @@
   <div class="section" id="language-reference">
 <h1>Language Reference<a class="headerlink" href="#language-reference" title="Permalink to this headline">¶</a></h1>
 <p>The <strong>glucose</strong> language is presently trivial and only supports the global
-declaration of 32-bit integer and 64-bit floating-point constants.</p>
+declaration of 32-bit integer and 64-bit floating-point constants, as well
+as enumeration data types.</p>
 <p>A <strong>glucose</strong> source file consists of zero or more definitions, each starting
 at the beginning of a line, optionally seperated by white-space. The order
 of definitions is not significant.</p>
 <p>Source files are UTF-8 encoded and it is the intention that any
 alphanumeric character in any script may appear in variable names. Operators
-consist of sequences of the charactes <code class="docutils literal"><span class="pre">~!&#64;#$%^&amp;*-+=&lt;&gt;.?:</span></code> and this list is
+consist of sequences of the charactes <code class="docutils literal"><span class="pre">~!&#64;#$%^&amp;|*-+=&lt;&gt;.?:</span></code> and this list is
 likely to expand.</p>
 <p>All newline characters as well as paragraph separators and form feeds are
 treated as newlines and all Unicode white-space characters are permitted
@@ -149,24 +151,35 @@ and treated as such.</p>
 <p>Identifiers consist of alphanumeric characters, marks, and punctuation
 considered connectors such as underscores, but may not begin with an
 ASCII digit.</p>
-<p>Identifiers are mangled to support LLVM IR with unsupported characters
+<p>The LLVM code-generator mangles identifiers, with unsupported characters
 along with dollar signs being replaced with their Unicode code-point in
 hexadecimal surrounded by dollar signs e.g. Hebrew aleph becomes $5d0$.</p>
 </div>
-<div class="section" id="definitions">
-<h2>Definitions<a class="headerlink" href="#definitions" title="Permalink to this headline">¶</a></h2>
-<p>Definitions bind a numeric constant to an identifier as either a 32-bit
-integer or a 64-bit floating-point value, either directly or based on the
-value of another constant.</p>
-<p>A definition must be positioned at the beginning of a line and consist of
-an identifier, equals character and either a numeric literal (e.g.
-<code class="docutils literal"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">1.23e4</span></code>) or identifier (e.g. <code class="docutils literal"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">b</span></code>).</p>
+<div class="section" id="variable-definitions">
+<h2>Variable Definitions<a class="headerlink" href="#variable-definitions" title="Permalink to this headline">¶</a></h2>
+<p>Variable definitions bind a numeric constant to an identifier as either a
+32-bit integer or a 64-bit floating-point value, either directly or based
+on the value of another constant.</p>
+<p>A variable definition must be positioned at the beginning of a line and
+consist of an identifier, equals character and either a numeric literal
+(e.g. <code class="docutils literal"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">1.23e4</span></code>) or identifier (e.g. <code class="docutils literal"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">b</span></code>).</p>
 <p>Integer literals may be prefixed with redundent zeros and may have positive
 integer exponents (themselves potentially prefixed with zeros) e.g. <code class="docutils literal"><span class="pre">012e03</span></code>
 (12000).</p>
 <p>Floating-point literals are distinguished from integer literals by the presence
 of a single decimal point followed by one or more digits that preceed any
 exponent and may have negative exponents e.g. <code class="docutils literal"><span class="pre">01.2e-03</span></code> (0.0012).</p>
+</div>
+<div class="section" id="enum-types">
+<h2>Enum Types<a class="headerlink" href="#enum-types" title="Permalink to this headline">¶</a></h2>
+<p>An enumeration type definition defines a set of distinct constructors that
+share a user-defined type.</p>
+<p>A type definition must be positioned at the beginning of a line and consist
+of the keyword <code class="docutils literal"><span class="pre">type</span></code>, a type identifier, an equals character, and one or
+more constructor identifiers separated by vertical bars e.g.
+<code class="docutils literal"><span class="pre">type</span> <span class="pre">Colour</span> <span class="pre">=</span> <span class="pre">Red</span> <span class="pre">|</span> <span class="pre">Green</span> <span class="pre">|</span> <span class="pre">Blue</span></code>.</p>
+<p>Constructors and variables share a single namespace and cannot have the same
+name. Type names occupy their own namespace.</p>
 </div>
 </div>
 
