@@ -2,11 +2,17 @@ BIN=$(shell cygpath -w `stack path --local-install-root`)\bin
 
 default : example.js example.exe
 
-example.exe : example.o src\RT\rt.o
-	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
+# example.exe : example.o src\RT\rt.o
+#	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
+
+example.exe : example.bc src\RT\rt.bc
+	lld-link $^ //SUBSYSTEM:windows //ENTRY:_start //OUT:$@
 
 %.o : %.s
 	llvm-mc -filetype=obj $^ -o $@
+
+%.bc : %.ll
+	opt -O3 $^ -o=$@
 
 %.opt : %.ll
 	opt -O3 -S $^ -o=$@
@@ -21,7 +27,6 @@ example.exe : example.o src\RT\rt.o
 	stack exec glucose -- -t js $<
 
 $(BIN)\glucose.exe : build
-	echo $(BIN)
 
 build :
 	stack build --fast

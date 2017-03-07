@@ -26,3 +26,4 @@ manual/_build
 /*.js
 /*.hs
 /*.glc
+/*.bc
