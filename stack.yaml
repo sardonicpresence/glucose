@@ -5,4 +5,4 @@ packages:
 extra-deps:
 resolver: nightly-2016-12-05
 ghc-options:
-  "*": -Wall -Wno-orphans -Wno-name-shadowing
+  "*": -Wall -Wno-type-defaults -Wno-orphans -Wno-name-shadowing

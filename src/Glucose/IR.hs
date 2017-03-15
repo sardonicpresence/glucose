@@ -56,7 +56,7 @@ instance Annotations ann => Show (Definition ann) where
 
 instance Annotations ann => Show (Expression ann) where
   show (Literal lit) = show lit `withType` (typeOf lit :: Type ann)
-  show (Reference kind name _ ty) = (show name `withRefKind` kind) `withType` ty -- TODO: include arity
+  show (Reference kind name rep ty) = (show name `withRefKind` kind) `withType` ty `withType` rep -- TODO: include arity
   show (Constructor typeName id) = show typeName ++ "#" ++ show id
   show (Lambda args value) = "\\" ++ unwords (map (show.extract) args) ++ " -> " ++ show (extract value)
   show (Apply expr arg) = show (extract expr) ++ " (" ++ show (extract arg) ++ ")"
@@ -142,7 +142,7 @@ instance Annotations Checked where
   funType = Function
   returnType (Function _ _ b) = b
   returnType _ = error "Cannot pass argument to a non-function!"
-  a `withType` ty = a ++ " : " ++ show ty
+  a `withType` ty = a ++ ":" ++ show ty
   a `withRefKind` Local = "%" ++ a
   a `withRefKind` Global = "@" ++ a
 

@@ -95,3 +95,6 @@ traverse1 :: Applicative f => (a -> f b) -> [a] -> f [b]
 traverse1 _ [] = errorWithoutStackTrace "traverse1: empty structure"
 traverse1 f [a] = pure <$> f a
 traverse1 f (a:as) = (:) <$> f a <*> traverse1 f as
+
+sequence1 :: Applicative f => [f a] -> f [a]
+sequence1 = traverse1 id

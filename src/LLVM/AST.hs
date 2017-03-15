@@ -10,8 +10,12 @@ data Global = VariableDefinition Name Linkage Expression
             | Alias Name Name Type
             | FunctionDefinition Name Linkage [Arg] [BasicBlock]
             | TypeDef Name Type
-            | FunctionDeclaration Name Type
+            | FunctionDeclaration Name (Parameter Type) [Type] FunctionAttributes
   deriving (Eq)
+
+data Parameter a = Parameter { parameter :: a, nonnull, noalias :: Bool } deriving (Eq)
+
+data FunctionAttributes = FunctionAttributes { allocsize :: Maybe Int } deriving (Eq)
 
 data BasicBlock = BasicBlock (Maybe Name) [Statement] Terminator deriving (Eq)
 
@@ -24,6 +28,7 @@ data Assignment = Call Expression [Expression]
                 | Bitcast Expression Type
                 | GEP Expression [Expression]
                 | PtrToInt Expression Type
+                | IntToPtr Expression Type
                 | BinaryOp BinaryOp Expression Expression
   deriving (Eq)
 
@@ -50,7 +55,7 @@ data Type = Void | I Int | F64 | Ptr Type | Function Type [Type] | Custom Name T
 
 data Linkage = External | Private | LinkOnceODR deriving (Eq)
 
-data BinaryOp = And | ICmp Comparison deriving (Eq)
+data BinaryOp = And | Or | ICmp Comparison deriving (Eq)
 
 data Comparison = Eq deriving (Eq)
 
@@ -79,16 +84,24 @@ instance Show Module where
 
 instance Show Global where
   show (VariableDefinition name linkage value) =
-    global name ++ " = " ++ withSpace linkage ++ "unnamed_addr constant " ++ withType value ++ ", " ++ alignment ++ "\n"
+    global name ++ " =" ++ withSpace linkage ++ " unnamed_addr constant " ++ withType value ++ ", " ++ alignment ++ "\n"
   show (Alias to from ty) =
     global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show ty ++ "* " ++ global from ++ "\n"
   show (FunctionDefinition name linkage args blocks) =
-    "define " ++ withSpace linkage ++ show (defReturnType blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
+    "define" ++ withSpace linkage ++ " " ++ show (defReturnType blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
               ++ " {\n" ++ concatMap show blocks ++ "}\n"
   show (TypeDef name ty) = local name ++ " = type " ++ show ty ++ "\n"
-  show (FunctionDeclaration name ty) =
-    "declare " ++ show (returnType ty) ++ " " ++ global name ++ "(" ++ args ++ ") " ++ functionAttributes ++ " \n"
-    where args = intercalate ", " . map show $ argTypes ty
+  show (FunctionDeclaration name result args attrs) =
+    "declare " ++ show result ++ " " ++ global name ++ "(" ++ intercalate ", " (map show args) ++ ") " ++ functionAttributes ++ withSpace attrs ++ " \n"
+
+instance Show a => Show (Parameter a) where
+  show a =
+    (if nonnull a then "nonnull " else "") ++
+    (if noalias a then "noalias " else "") ++
+    show (parameter a)
+
+instance Show FunctionAttributes where
+  show a = maybe "" (\n -> "allocsize(" ++ show n ++ ")") $ allocsize a
 
 instance Show BasicBlock where
   show (BasicBlock label statements terminator) =
@@ -104,8 +117,9 @@ instance Show Assignment where
   show (Load value) = "load " ++ show (deref $ typeOf value) ++ ", " ++ withType value
   show (Bitcast value ty) = "bitcast " ++ withType value ++ " to " ++ show ty
   show (GEP p indices) =
-    "getelementptr " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
+    "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
   show (PtrToInt expr ty) = "ptrtoint " ++ withType expr ++ " to " ++ show ty
+  show (IntToPtr expr ty) = "inttoptr " ++ withType expr ++ " to " ++ show ty
   show (BinaryOp op a b) = show op ++ " " ++ withType a ++ ", " ++ show b
 
 instance Show Terminator where
@@ -115,6 +129,7 @@ instance Show Terminator where
 
 instance Show BinaryOp where
   show And = "and"
+  show Or = "or"
   show (ICmp comparison) = "icmp " ++ show comparison
 
 instance Show Comparison where
@@ -185,13 +200,13 @@ arguments :: (Typed a, Show a) => [a] -> String
 arguments = intercalate ", " . map withType
 
 functionAttributes :: String
-functionAttributes = "unnamed_addr " ++ alignment ++ " nounwind"
+functionAttributes = "unnamed_addr " ++ alignment ++ " nounwind" -- ++ " alwaysinline" -- TODO
 
 alignment :: String
 alignment = "align 16"
 
 withSpace :: Show a => a -> String
-withSpace a = if null (show a) then "" else show a ++ " "
+withSpace a = if null (show a) then "" else " " ++ show a
 
 
 -- * Typed instances
@@ -199,12 +214,18 @@ withSpace a = if null (show a) then "" else show a ++ " "
 class Typed a where
   typeOf :: a -> Type
 
+instance Typed Type where
+  typeOf = id
+
 instance Typed Global where
   typeOf (VariableDefinition _ _ expr) = typeOf expr
   typeOf (Alias _ _ ty) = Ptr ty
   typeOf (FunctionDefinition _ _ args blocks) = Function (defReturnType blocks) $ map typeOf args
   typeOf (TypeDef _ ty) = ty
-  typeOf (FunctionDeclaration _ ty) = ty
+  typeOf (FunctionDeclaration _ result args _) = Function (typeOf result) (map typeOf args)
+
+instance Typed a => Typed (Parameter a) where
+  typeOf = typeOf . parameter
 
 instance Typed BasicBlock where
   typeOf (BasicBlock _ _ terminator) = typeOf terminator
@@ -224,6 +245,7 @@ instance Typed Assignment where
         _ -> error "cannot use a non-constant expression to index into a structure type"
       _ -> error $ "cannot getElementPtr of non-aggregate value type: " ++ show ty
   typeOf (PtrToInt _ ty) = ty
+  typeOf (IntToPtr _ ty) = ty
   typeOf (BinaryOp op a _) = opType op $ typeOf a
 
 instance Typed Terminator where
@@ -248,6 +270,7 @@ withType a = show (typeOf a) ++ " " ++ show a
 
 opType :: BinaryOp -> Type -> Type
 opType And ty = ty
+opType Or ty = ty
 opType (ICmp _) _ = I 1
 
 
@@ -268,6 +291,12 @@ returnType :: Type -> Type
 returnType (Ptr a) = returnType a
 returnType (Function a _) = a
 returnType a = error $ "cannot call a value of non-function type: " ++ show a
+
+applied :: Type -> Type
+applied (Ptr a) = applied a
+applied (Function r [_]) = r
+applied (Function r (_:as)) = Function r as
+applied a = error $ "cannot call a value of non-function type: " ++ show a
 
 defReturnType :: [BasicBlock] -> Type
 defReturnType blocks = fromMaybe Void . listToMaybe . filter (/= Void) $ map typeOf blocks

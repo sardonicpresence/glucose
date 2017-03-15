@@ -48,6 +48,7 @@ typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors
   constructors = traverse1 duplicate <$> identifier `separatedBy` operator Bar
 
 expression :: Parse AST.Expression
+-- expression = AST.Value <$$> value
 expression = buildExpression <$> some value
 
 buildExpression :: [FromSource AST.Value] -> FromSource AST.Expression
@@ -59,7 +60,7 @@ value = AST.Variable <$$> identifier
     <|> AST.Literal <$$> literal
     <|> toLambda <$> (beginLambda *> some identifier <* operator Arrow) <*> expression
   where
-    toLambda a b = AST.Lambda <$> sequence (duplicate <$> a) <*> duplicate b
+    toLambda a b = AST.Lambda <$> sequence1 (duplicate <$> a) <*> duplicate b
 
 endOfDefinition :: Parse ()
 endOfDefinition = (lexeme "end of definition" . traverse $ is _endOfDefinition) <|> pure <$> eof

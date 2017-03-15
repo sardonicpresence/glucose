@@ -62,8 +62,11 @@ expression (Apply (extract -> f) (extract -> args)) = case flattenApply f args o
   Application rep root calls partial -> maybe full partialApply partial where
     full = do
       fn <- expression root
-      let tys = tail $ scanl applicationResult (llvmType rep) calls
-      foldlM genCall fn $ zip calls tys
+      foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
+
+callsWithTypes :: IR.Type -> IR.Type -> [[IR.Expression]] -> [([IR.Expression], IR.Type, IR.Type)]
+callsWithTypes rep ty calls = zip3 calls (map fst foo) (map snd foo) where
+  foo = scanl (uncurry applicationResult) (rep, ty) calls
 
 buildLambda :: Name -> Linkage -> [IR.Arg] -> IR.Expression -> LLVM LLVM.Expression
 buildLambda name linkage args def = do
@@ -88,6 +91,9 @@ buildClosure f args = do
   store (integer arity $ length args) parity
   mapM_ (storeArg pclosure) $ zip [0..] args
   pure ptr
+  -- untagged <- ptrtoint ptr size
+  -- tagged <- orOp untagged (integer arity $ length args)
+  -- inttoptr tagged box
   where
     storeArg pclosure (i, arg) = do
       parg <- getElementPtr pclosure [i64 0, i32 3, i32 i]
@@ -96,27 +102,47 @@ buildClosure f args = do
 partialApply :: Partial -> LLVM LLVM.Expression
 partialApply _ = undefined -- TODO: partial application
 
-genCall :: LLVM.Expression -> ([IR.Expression], LLVM.Type) -> LLVM LLVM.Expression
-genCall fn (params, ty) = do
-  ssaArgs <- zipWithM asArg (LLVM.argTypes ty) =<< traverse expression params
-  case ty of
-    LLVM.Function{} -> do
-      ssaFn <- asFunction fn $ LLVM.Ptr ty
-      LLVM.call ssaFn ssaArgs
-    _ -> error "Unsupported" -- TODO
+genCall :: LLVM.Expression -> ([IR.Expression], IR.Type, IR.Type) -> LLVM LLVM.Expression
+genCall fn (params, llvmType -> rep, llvmType -> ty) = do
+  ssaArgs <- zipWithM asArg (LLVM.argTypes rep) =<< traverse expression params
+  case rep of
+    LLVM.Function retType argTypes ->
+      case LLVM.typeOf fn of
+        Ptr LLVM.Function{} -> LLVM.call fn ssaArgs
+        _ -> do
+          fnApply <- getApply retType argTypes
+          result <- LLVM.call fnApply (ssaArgs ++ [bitcastFunctionRef fn])
+          asArg (LLVM.returnType ty) result
+      -- ssaFn <- asFunction fn $ LLVM.Ptr ty
+      -- LLVM.call ssaFn ssaArgs
+    _ -> error $ "Unsupported: " <> show ty -- TODO
 
 getApply :: LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
 getApply returnTy tys = do
   let genType = GeneratedApply $ ApplyFn ApplyUnknown (typeRep returnTy) (map typeRep tys)
   tell $ Set.singleton genType
-  pure $ LLVM.GlobalReference (generatedName genType) undefined -- TODO
+  pure $ LLVM.GlobalReference (generatedName genType) (LLVM.Function (varType returnTy) (map varType tys))
 
 asArg :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
 asArg ty arg | ty == LLVM.typeOf arg = pure arg
 asArg ty arg | sameRepresentation ty (LLVM.typeOf arg) = bitcast arg ty
 asArg ty arg | Ptr ty == LLVM.typeOf arg = load arg
 asArg ty arg | sameRepresentation (Ptr ty) (LLVM.typeOf arg) = bitcast arg (Ptr ty) >>= load
+asArg ty arg | sameRepresentation ty (Ptr $ LLVM.typeOf arg) = do
+  ptr <- heapAllocN 8 -- TODO: use size of type
+  box <- bitcast ptr (Ptr $ LLVM.typeOf arg)
+  store arg box
+  if LLVM.typeOf ptr == ty
+    then pure ptr
+    else bitcast box ty
 asArg ty arg = error $ "Cannot apply expression of type " ++ show (LLVM.typeOf arg) ++ " as argument of type " ++ show ty
+
+-- fromResult :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
+-- fromResult result ty | ty == LLVM.typeOf result = pure result
+-- fromResult result ty | sameRepresentation ty (LLVM.typeOf result) = bitcast result ty
+-- fromResult result ty | Ptr ty == LLVM.typeOf result = load arg
+-- fromResult result ty | sameRepresentation (Ptr ty) (LLVM.typeOf result) = bitcast arg (Ptr ty) >>= load
+-- fromResult result ty | sameRepresentation ty (Ptr $ LLVM.typeOf result) = do
 
 asFunction :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
 asFunction expr ty = case LLVM.typeOf expr of
@@ -127,13 +153,14 @@ bitcastFunctionRef :: LLVM.Expression -> LLVM.Expression
 bitcastFunctionRef (LLVM.GlobalReference name ty@LLVM.Function{}) = LLVM.BitcastGlobalRef name ty box
 bitcastFunctionRef a = a
 
-applicationResult :: LLVM.Type -> [IR.Expression] -> LLVM.Type
-applicationResult f [] = f
-applicationResult (LLVM.Custom name f) as = LLVM.Custom name $ applicationResult f as
-applicationResult f@LLVM.Ptr{} _ = f
-applicationResult (LLVM.Function result [_]) (_:as) = applicationResult result as
-applicationResult (LLVM.Function result (_:args)) (_:as) = applicationResult (LLVM.Function result args) as
-applicationResult f _ = error $ "cannot apply arguments to expression of type: " ++ show f
+repType :: IR.Type -> IR.Type -> IR.Type
+repType Bound{} ty = ty
+repType rep _ = rep
+
+applicationResult :: IR.Type -> IR.Type -> [IR.Expression] -> (IR.Type, IR.Type)
+applicationResult rep ty as = go rep ty as where
+  go rep ty [] = (repType rep ty, ty)
+  go rep ty (_:as) = applicationResult (IR.returnType $ repType rep ty) (IR.returnType ty) as
 
 nameOf :: LLVM.Expression -> Name
 nameOf (LLVM.LocalReference n _) = n
@@ -157,7 +184,7 @@ llvmType (IR.Function (Arity n m) (varType . llvmType -> from) (llvmType -> to))
     else LLVM.Function f (from : as)
   f -> LLVM.Function f [from]
 
-varType :: LLVM.Type -> LLVM.Type
+varType :: LLVM.Type -> LLVM.Type -- TODO: repType . typeRep
 varType LLVM.Function{} = box
 varType a = a
 

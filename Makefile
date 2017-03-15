@@ -1,32 +1,30 @@
-BIN=$(shell cygpath -w `stack path --local-install-root`)\bin
+BIN=$(shell cygpath -m `stack path --local-install-root`)/bin
 
 default : example.js example.exe
 
 # example.exe : example.o src\RT\rt.o
-#	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
+# 	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
 
-example.exe : example.bc src\RT\rt.bc
-	lld-link $^ //SUBSYSTEM:windows //ENTRY:_start //OUT:$@
+example.exe : example.bc src/RT/rt.bc
+	lld-link $^ //subsystem:windows //entry:_start //out:$@ //debug //defaultlib:kernel32
 
 %.o : %.s
-	llvm-mc -filetype=obj $^ -o $@
+	llvm-mc -arch=x86-64 -mc-relax-all -mcpu=broadwell -filetype=obj $^ -o $@
 
 %.bc : %.ll
 	opt -O3 $^ -o=$@
 
-%.opt : %.ll
-	opt -O3 -S $^ -o=$@
-
-%.s : %.opt
+%.s : %.bc
 	llc -O3 $^ -o=$@
 
-%.ll : %.glc $(BIN)\glucose.exe
+%.ll : %.glc $(BIN)/glucose.exe
 	stack exec glucose -- $<
 
-%.js : %.glc $(BIN)\glucose.exe
+%.js : %.glc $(BIN)/glucose.exe
 	stack exec glucose -- -t js $<
 
-$(BIN)\glucose.exe : build
+$(BIN)/glucose.exe : build
+	echo $@
 
 build :
 	stack build --fast

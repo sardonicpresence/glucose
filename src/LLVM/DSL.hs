@@ -107,7 +107,8 @@ load :: Monad m => Expression -> LLVMT m Expression
 load = assign . Load
 
 bitcast :: Monad m => Expression -> Type -> LLVMT m Expression
-bitcast = (assign .) . Bitcast
+bitcast a ty | typeOf a == ty = pure a
+bitcast a ty = assign $ Bitcast a ty
 
 getElementPtr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
 getElementPtr = (assign .) . GEP
@@ -115,8 +116,14 @@ getElementPtr = (assign .) . GEP
 ptrtoint :: Monad m => Expression -> Type -> LLVMT m Expression
 ptrtoint = (assign .) . PtrToInt
 
+inttoptr :: Monad m => Expression -> Type -> LLVMT m Expression
+inttoptr = (assign .) . IntToPtr
+
 andOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 andOp = binaryOp And
+
+orOp :: Monad m => Expression -> Expression -> LLVMT m Expression
+orOp = binaryOp Or
 
 icmp :: Monad m => Comparison -> Expression -> Expression -> LLVMT m Expression
 icmp = binaryOp . ICmp

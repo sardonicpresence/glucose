@@ -2,6 +2,7 @@ dist
 dist-*
 cabal-dev
 *.exe
+*.exe.manifest
 *.o
 *.bc
 *.s
