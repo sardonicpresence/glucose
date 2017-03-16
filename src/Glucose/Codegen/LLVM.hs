@@ -125,7 +125,7 @@ getApply returnTy tys = do
 
 asArg :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
 asArg ty arg | ty == LLVM.typeOf arg = pure arg
-asArg ty arg | sameRepresentation ty (LLVM.typeOf arg) = bitcast arg ty
+asArg ty arg | sameRepresentation ty (LLVM.typeOf arg) = bitcastAndTag arg ty
 asArg ty arg | Ptr ty == LLVM.typeOf arg = load arg
 asArg ty arg | sameRepresentation (Ptr ty) (LLVM.typeOf arg) = bitcast arg (Ptr ty) >>= load
 asArg ty arg | sameRepresentation ty (Ptr $ LLVM.typeOf arg) = do
@@ -143,6 +143,12 @@ asArg ty arg = error $ "Cannot apply expression of type " ++ show (LLVM.typeOf a
 -- fromResult result ty | Ptr ty == LLVM.typeOf result = load arg
 -- fromResult result ty | sameRepresentation (Ptr ty) (LLVM.typeOf result) = bitcast arg (Ptr ty) >>= load
 -- fromResult result ty | sameRepresentation ty (Ptr $ LLVM.typeOf result) = do
+
+bitcastAndTag :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
+bitcastAndTag expr ty = case LLVM.typeOf expr of
+  -- Uses 'add' to simplify with 'sub' in apply functions ('or' and 'and' doesn't appear to)
+  Ptr (LLVM.Function _ args) -> flip inttoptr ty =<< addOp (i64 $ length args) =<< ptrtoint expr (I 64)
+  _ -> bitcast expr ty
 
 asFunction :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
 asFunction expr ty = case LLVM.typeOf expr of

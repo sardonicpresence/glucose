@@ -20,6 +20,7 @@ data FunctionAttributes = FunctionAttributes { allocsize :: Maybe Int } deriving
 data BasicBlock = BasicBlock (Maybe Name) [Statement] Terminator deriving (Eq)
 
 data Statement = Assignment Name Assignment
+               | VoidCall Expression [Expression]
                | Store Expression Expression
   deriving (Eq)
 
@@ -27,8 +28,7 @@ data Assignment = Call Expression [Expression]
                 | Load Expression
                 | Bitcast Expression Type
                 | GEP Expression [Expression]
-                | PtrToInt Expression Type
-                | IntToPtr Expression Type
+                | Convert ConversionOp Expression Type
                 | BinaryOp BinaryOp Expression Expression
   deriving (Eq)
 
@@ -55,7 +55,9 @@ data Type = Void | I Int | F64 | Ptr Type | Function Type [Type] | Custom Name T
 
 data Linkage = External | Private | LinkOnceODR deriving (Eq)
 
-data BinaryOp = And | Or | ICmp Comparison deriving (Eq)
+data ConversionOp = PtrToInt | IntToPtr | Trunc | Zext deriving (Eq)
+
+data BinaryOp = And | Or | Add | Sub | Mul | ICmp Comparison deriving (Eq)
 
 data Comparison = Eq deriving (Eq)
 
@@ -109,6 +111,7 @@ instance Show BasicBlock where
     where showLine s = "  " ++ show s ++ "\n"
 
 instance Show Statement where
+  show (VoidCall f args) = show (Call f args)
   show (Assignment name assignment) = local name ++ " = " ++ show assignment
   show (Store from to) = "store " ++ withType from ++ ", " ++ withType to
 
@@ -118,8 +121,7 @@ instance Show Assignment where
   show (Bitcast value ty) = "bitcast " ++ withType value ++ " to " ++ show ty
   show (GEP p indices) =
     "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
-  show (PtrToInt expr ty) = "ptrtoint " ++ withType expr ++ " to " ++ show ty
-  show (IntToPtr expr ty) = "inttoptr " ++ withType expr ++ " to " ++ show ty
+  show (Convert op expr ty) = show op ++ " " ++ withType expr ++ " to " ++ show ty
   show (BinaryOp op a b) = show op ++ " " ++ withType a ++ ", " ++ show b
 
 instance Show Terminator where
@@ -127,9 +129,18 @@ instance Show Terminator where
   show (Branch cond ifTrue ifFalse) = "br " ++ withType cond ++ ", label " ++ local ifTrue ++ ", label " ++ local ifFalse
   show Unreachable = "unreachable"
 
+instance Show ConversionOp where
+  show PtrToInt = "ptrtoint"
+  show IntToPtr = "inttoptr"
+  show Trunc = "trunc"
+  show Zext = "zext"
+
 instance Show BinaryOp where
   show And = "and"
   show Or = "or"
+  show Add = "add"
+  show Sub = "sub"
+  show Mul = "mul"
   show (ICmp comparison) = "icmp " ++ show comparison
 
 instance Show Comparison where
@@ -244,8 +255,7 @@ instance Typed Assignment where
         Literal a -> error $ "cannot use non-integral type as an index: " ++ show (typeOf a)
         _ -> error "cannot use a non-constant expression to index into a structure type"
       _ -> error $ "cannot getElementPtr of non-aggregate value type: " ++ show ty
-  typeOf (PtrToInt _ ty) = ty
-  typeOf (IntToPtr _ ty) = ty
+  typeOf (Convert _ _ ty) = ty
   typeOf (BinaryOp op a _) = opType op $ typeOf a
 
 instance Typed Terminator where
@@ -269,9 +279,8 @@ withType :: (Typed a, Show a) => a -> String
 withType a = show (typeOf a) ++ " " ++ show a
 
 opType :: BinaryOp -> Type -> Type
-opType And ty = ty
-opType Or ty = ty
 opType (ICmp _) _ = I 1
+opType _ ty = ty
 
 
 -- * Utilities

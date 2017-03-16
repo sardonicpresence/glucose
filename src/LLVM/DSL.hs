@@ -100,6 +100,9 @@ define def = globals <>= [def]
 call :: Monad m => Expression -> [Expression] -> LLVMT m Expression
 call = (assign .) . Call
 
+call_ :: Monad m => Expression -> [Expression] -> LLVMT m ()
+call_ = (state .) . VoidCall
+
 store :: Monad m => Expression -> Expression -> LLVMT m ()
 store = (state .) . Store
 
@@ -114,16 +117,34 @@ getElementPtr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
 getElementPtr = (assign .) . GEP
 
 ptrtoint :: Monad m => Expression -> Type -> LLVMT m Expression
-ptrtoint = (assign .) . PtrToInt
+ptrtoint = convert PtrToInt
 
 inttoptr :: Monad m => Expression -> Type -> LLVMT m Expression
-inttoptr = (assign .) . IntToPtr
+inttoptr = convert IntToPtr
+
+trunc :: Monad m => Expression -> Type -> LLVMT m Expression
+trunc = convert Trunc
+
+zext :: Monad m => Expression -> Type -> LLVMT m Expression
+zext = convert Zext
+
+convert :: Monad m => ConversionOp -> Expression -> Type -> LLVMT m Expression
+convert = ((assign .) .) . Convert
 
 andOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 andOp = binaryOp And
 
 orOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 orOp = binaryOp Or
+
+addOp :: Monad m => Expression -> Expression -> LLVMT m Expression
+addOp = binaryOp Add
+
+subOp :: Monad m => Expression -> Expression -> LLVMT m Expression
+subOp = binaryOp Sub
+
+mulOp :: Monad m => Expression -> Expression -> LLVMT m Expression
+mulOp = binaryOp Mul
 
 icmp :: Monad m => Comparison -> Expression -> Expression -> LLVMT m Expression
 icmp = binaryOp . ICmp
