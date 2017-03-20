@@ -6,7 +6,7 @@ default : example.js example.exe
 # 	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
 
 example.exe : example.bc src/RT/rt.bc
-	lld-link $^ //subsystem:windows //entry:_start //out:$@ //debug //defaultlib:kernel32
+	lld-link $^ /subsystem:windows /entry:_start /out:$@ /debug /defaultlib:kernel32
 
 %.o : %.s
 	llvm-mc -arch=x86-64 -mc-relax-all -mcpu=broadwell -filetype=obj $^ -o $@
