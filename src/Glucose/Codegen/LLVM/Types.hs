@@ -1,4 +1,4 @@
-module Glucose.Codegen.LLVM.Types (tagMask, box, fn, size, closure, arity, typeDeclarations, rtName) where
+module Glucose.Codegen.LLVM.Types (tagMask, boxed, box, fn, size, closure, arity, typeDeclarations, rtName) where
 
 import Control.Arrow
 import Data.Monoid
@@ -9,7 +9,8 @@ import LLVM.Name
 tagMask :: Int
 tagMask = 0xF
 
-box, fn, size, closure, arity :: Type
+boxed, box, fn, size, closure, arity :: Type
+boxed = rtType Boxed
 box = rtType Box
 fn = rtType Fn
 size = rtType Size

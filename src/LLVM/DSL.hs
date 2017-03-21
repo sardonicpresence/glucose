@@ -89,7 +89,7 @@ defineVariable name linkage definition = do
   globals <>= defs
   pure $ GlobalReference name (typeOf $ last defs)
 
-alias :: Monad m => Name -> Name -> Type -> LLVMT m ()
+alias :: Monad m => Name -> Expression -> Type -> LLVMT m ()
 alias = ((define .) .) . Alias
 
 define :: Monad m => Global -> LLVMT m ()
@@ -110,8 +110,7 @@ load :: Monad m => Expression -> LLVMT m Expression
 load = assign . Load
 
 bitcast :: Monad m => Expression -> Type -> LLVMT m Expression
-bitcast a ty | typeOf a == ty = pure a
-bitcast a ty = assign $ Bitcast a ty
+bitcast = convert Bitcast
 
 getElementPtr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
 getElementPtr = (assign .) . GEP
@@ -129,13 +128,18 @@ zext :: Monad m => Expression -> Type -> LLVMT m Expression
 zext = convert Zext
 
 convert :: Monad m => ConversionOp -> Expression -> Type -> LLVMT m Expression
-convert = ((assign .) .) . Convert
+convert _ a ty | typeOf a == ty = pure a
+convert _ a (Custom _ ty) | typeOf a == ty = pure a
+convert op a ty = assign $ Convert op a ty
 
 andOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 andOp = binaryOp And
 
 orOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 orOp = binaryOp Or
+
+xorOp :: Monad m => Expression -> Expression -> LLVMT m Expression
+xorOp = binaryOp Xor
 
 addOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 addOp = binaryOp Add

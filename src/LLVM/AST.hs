@@ -7,7 +7,7 @@ import LLVM.Name
 data Module = Module Target [Global] deriving (Eq)
 
 data Global = VariableDefinition Name Linkage Expression
-            | Alias Name Name Type
+            | Alias Name Expression Type
             | FunctionDefinition Name Linkage [Arg] [BasicBlock]
             | TypeDef Name Type
             | FunctionDeclaration Name (Parameter Type) [Type] FunctionAttributes
@@ -26,7 +26,6 @@ data Statement = Assignment Name Assignment
 
 data Assignment = Call Expression [Expression]
                 | Load Expression
-                | Bitcast Expression Type
                 | GEP Expression [Expression]
                 | Convert ConversionOp Expression Type
                 | BinaryOp BinaryOp Expression Expression
@@ -40,7 +39,8 @@ data Terminator = Return Expression
 data Expression = Literal Literal
                 | GlobalReference Name Type
                 | LocalReference Name Type
-                | BitcastGlobalRef Name Type Type
+                | ConstConvert ConversionOp Expression Type
+                | ConstBinaryOp BinaryOp Expression Expression
   deriving (Eq)
 
 data Arg = Arg Name Type deriving (Eq)
@@ -55,9 +55,9 @@ data Type = Void | I Int | F64 | Ptr Type | Function Type [Type] | Custom Name T
 
 data Linkage = External | Private | LinkOnceODR deriving (Eq)
 
-data ConversionOp = PtrToInt | IntToPtr | Trunc | Zext deriving (Eq)
+data ConversionOp = Bitcast | PtrToInt | IntToPtr | Trunc | Zext deriving (Eq)
 
-data BinaryOp = And | Or | Add | Sub | Mul | ICmp Comparison deriving (Eq)
+data BinaryOp = And | Or | Xor | Add | Sub | Mul | ICmp Comparison deriving (Eq)
 
 data Comparison = Eq deriving (Eq)
 
@@ -88,7 +88,7 @@ instance Show Global where
   show (VariableDefinition name linkage value) =
     global name ++ " =" ++ withSpace linkage ++ " unnamed_addr constant " ++ withType value ++ ", " ++ alignment ++ "\n"
   show (Alias to from ty) =
-    global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show ty ++ "* " ++ global from ++ "\n"
+    global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show ty ++ "* " ++ show from ++ "\n"
   show (FunctionDefinition name linkage args blocks) =
     "define" ++ withSpace linkage ++ " " ++ show (defReturnType blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
               ++ " {\n" ++ concatMap show blocks ++ "}\n"
@@ -118,7 +118,6 @@ instance Show Statement where
 instance Show Assignment where
   show (Call f args) = "tail call " ++ show (returnType . deref $ typeOf f) ++ " " ++ show f ++ "(" ++ arguments args ++ ")"
   show (Load value) = "load " ++ show (deref $ typeOf value) ++ ", " ++ withType value
-  show (Bitcast value ty) = "bitcast " ++ withType value ++ " to " ++ show ty
   show (GEP p indices) =
     "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
   show (Convert op expr ty) = show op ++ " " ++ withType expr ++ " to " ++ show ty
@@ -130,6 +129,7 @@ instance Show Terminator where
   show Unreachable = "unreachable"
 
 instance Show ConversionOp where
+  show Bitcast = "bitcast"
   show PtrToInt = "ptrtoint"
   show IntToPtr = "inttoptr"
   show Trunc = "trunc"
@@ -138,6 +138,7 @@ instance Show ConversionOp where
 instance Show BinaryOp where
   show And = "and"
   show Or = "or"
+  show Xor = "xor"
   show Add = "add"
   show Sub = "sub"
   show Mul = "mul"
@@ -150,7 +151,8 @@ instance Show Expression where
   show (Literal value) = show value
   show (GlobalReference name _) = global name
   show (LocalReference name _) = local name
-  show (BitcastGlobalRef name from to) = "bitcast(" ++ show from ++ "* " ++ global name ++ " to " ++ show to ++ ")"
+  show (ConstConvert op expr ty) = show op ++ "(" ++ withType expr ++ " to " ++ show ty ++ ")"
+  show (ConstBinaryOp op a b) = show op ++ "(" ++ withType a ++ ", " ++ withType b ++ ")"
 
 instance Show Linkage where
   show External = ""
@@ -244,7 +246,6 @@ instance Typed BasicBlock where
 instance Typed Assignment where
   typeOf (Call f _) = returnType $ typeOf f
   typeOf (Load expr) = deref $ typeOf expr
-  typeOf (Bitcast _ ty) = ty
   typeOf (GEP p indices) = Ptr $ foldl dereference (typeOf p) indices where
     dereference ty index = case ty of
       Custom _ ty -> dereference ty index
@@ -266,7 +267,8 @@ instance Typed Expression where
   typeOf (Literal value) = typeOf value
   typeOf (GlobalReference _ ty) = Ptr ty
   typeOf (LocalReference _ ty) = ty
-  typeOf (BitcastGlobalRef _ _ ty) = ty
+  typeOf (ConstConvert _ _ ty) = ty
+  typeOf (ConstBinaryOp op a _) = opType op $ typeOf a
 
 instance Typed Arg where
   typeOf (Arg _ ty) = ty

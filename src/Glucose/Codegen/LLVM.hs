@@ -39,11 +39,30 @@ runCodegen a = case runWriter a of
 definition :: Definition -> LLVMT Codegen ()
 definition (Definition (extract -> Identifier n) def) = let name = mkName n in
   mapLLVMT (withNewScope name) $ case extract def of
-    Reference Global (Identifier to) rep _ -> alias name (mkName to) (llvmType rep)
+    Reference Global (Identifier to) rep _ -> alias name (GlobalReference (mkName to) $ llvmType rep) (llvmType rep)
     Lambda args expr -> do
-      tell $ Set.singleton $ GeneratedApply $ ApplyFn ApplyUnknown I32Rep [BoxRep] -- TODO: Debug only!
+      void $ defineFunction (slowName name) External (LLVM.Arg (mkName "args") (Ptr box))
       void $ defineFunction name External (map (argument . extract) args) (ret =<< expression (extract expr))
     _ -> void $ defineVariable name External $ expression (extract def)
+
+defineWrapper :: Name -> [IR.Arg] -> LLVM LLVM.Expression
+defineWrapper name args = defineFunction (slowName name) External pargs $ do
+  let pargs = LLVM.Arg (mkName "args") (Ptr box)
+  for_ [0..length args-1] $ \i -> do
+    let arg = args !! i
+    parg <- getElementPtr (argReference pargs) i
+    asArg (typeOf arg) parg
+
+
+slowName :: Name -> Name
+slowName (Name n) = Name $ n <> "$$"
+
+tagFunction :: LLVM.Expression -> LLVM.Expression
+tagFunction f = case LLVM.typeOf f of
+  Ptr (LLVM.Function _ args) ->
+    -- Uses 'add' to simplify with 'sub' in apply functions ('or' and 'and' doesn't appear to)
+    ConstConvert IntToPtr (ConstBinaryOp Add (ConstConvert PtrToInt f size) (integer size $ length args)) box
+  _ -> f
 
 argument :: IR.Arg -> LLVM.Arg
 argument (IR.Arg (Identifier name) ty) = LLVM.Arg (mkName name) (llvmType ty)
@@ -90,8 +109,11 @@ buildClosure f args = do
   parity <- getElementPtr pclosure [i64 0, i32 1]
   store (integer arity $ length args) parity
   mapM_ (storeArg pclosure) $ zip [0..] args
-  pure ptr
-  -- untagged <- ptrtoint ptr size
+  -- pure ptr
+
+  untagged <- flip inttoptr box =<< andOp (integer size (-16)) =<< ptrtoint ptr size
+  pure untagged
+
   -- tagged <- orOp untagged (integer arity $ length args)
   -- inttoptr tagged box
   where
@@ -137,26 +159,11 @@ asArg ty arg | sameRepresentation ty (Ptr $ LLVM.typeOf arg) = do
     else bitcast box ty
 asArg ty arg = error $ "Cannot apply expression of type " ++ show (LLVM.typeOf arg) ++ " as argument of type " ++ show ty
 
--- fromResult :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
--- fromResult result ty | ty == LLVM.typeOf result = pure result
--- fromResult result ty | sameRepresentation ty (LLVM.typeOf result) = bitcast result ty
--- fromResult result ty | Ptr ty == LLVM.typeOf result = load arg
--- fromResult result ty | sameRepresentation (Ptr ty) (LLVM.typeOf result) = bitcast arg (Ptr ty) >>= load
--- fromResult result ty | sameRepresentation ty (Ptr $ LLVM.typeOf result) = do
-
 bitcastAndTag :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
-bitcastAndTag expr ty = case LLVM.typeOf expr of
-  -- Uses 'add' to simplify with 'sub' in apply functions ('or' and 'and' doesn't appear to)
-  Ptr (LLVM.Function _ args) -> flip inttoptr ty =<< addOp (i64 $ length args) =<< ptrtoint expr (I 64)
-  _ -> bitcast expr ty
-
-asFunction :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
-asFunction expr ty = case LLVM.typeOf expr of
-  LLVM.Custom _ _ -> bitcast expr ty -- TODO: restrict to Box or Fn
-  _ -> pure expr
+bitcastAndTag expr = bitcast $ tagFunction expr
 
 bitcastFunctionRef :: LLVM.Expression -> LLVM.Expression
-bitcastFunctionRef (LLVM.GlobalReference name ty@LLVM.Function{}) = LLVM.BitcastGlobalRef name ty box
+bitcastFunctionRef a@(LLVM.GlobalReference _ LLVM.Function{}) = ConstConvert LLVM.Bitcast a box
 bitcastFunctionRef a = a
 
 repType :: IR.Type -> IR.Type -> IR.Type
@@ -164,14 +171,9 @@ repType Bound{} ty = ty
 repType rep _ = rep
 
 applicationResult :: IR.Type -> IR.Type -> [IR.Expression] -> (IR.Type, IR.Type)
-applicationResult rep ty as = go rep ty as where
+applicationResult = go where
   go rep ty [] = (repType rep ty, ty)
   go rep ty (_:as) = applicationResult (IR.returnType $ repType rep ty) (IR.returnType ty) as
-
-nameOf :: LLVM.Expression -> Name
-nameOf (LLVM.LocalReference n _) = n
-nameOf (LLVM.GlobalReference n _) = n
-nameOf a = error $ "cannot apply arguments to expression: " ++ show a
 
 literal :: IR.Literal -> LLVM.Expression
 literal (IR.IntegerLiteral n) = i32 n

@@ -131,37 +131,12 @@ generateFunction = evalLLVM . \case
 
           -- Push new arguments
           for_ [0..length args - 1] $ \i -> do
+            let arg = args !! i
             iarg <- addOp napplied (i64 $ i+1)
-            parg <- getElementPtr ptotal [iarg]
-            store (argReference $ args !! i) parg
+            parg <- flip bitcast (Ptr $ typeOf arg)  =<< getElementPtr ptotal [iarg]
+            store (argReference arg) parg
 
+          -- Make the call
           let tyTarget = Function (repType resultType) [Ptr box]
           target <- flip bitcast (Ptr tyTarget) =<< load =<< getElementPtr pclosure [i64 0, i32 0]
           ret =<< call target [ptotal]
-
-  -- ; Tag bits were 0 so no need to mask
-  -- %clp = bitcast %$fn* %f to %$closure*
-  -- %pnargs = getelementptr inbounds %$closure, %$closure* %clp, i64 0, i32 2
-  -- %nargs = load %$arity, %$arity* %pnargs
-  -- %args = getelementptr inbounds %$closure, %$closure* %clp, i64 0, i32 3
-  -- %nargs2 = add %$arity %nargs, 1
-  --
-  -- %nargs2.i64 = zext %$arity %nargs2 to i64
-  -- %args2 = call %$box* @$heapAlloc(i64 %nargs2.i64)
-  -- %args2.p = bitcast %$box* %args2 to [0 x %$box]*
-  -- %args2.i8 = bitcast [0 x %$box]* %args2.p to i8*
-  --
-  -- %args.p = getelementptr [0 x %$box], [0 x %$box]* %args, i64 0
-  -- %args.i8 = bitcast [0 x %$box]* %args.p to i8*
-  -- %bytes = mul %$arity %nargs, 8
-  -- %bytes.i64 = zext %$arity %bytes to i64
-  -- call void @llvm.memcpy.p0i8.p0i8.i64(i8* %args2.i8, i8* %args.i8, i64 %bytes.i64, i32 8, i1 false)
-  --
-  -- %pa = getelementptr inbounds [0 x %$box], [0 x %$box]* %args2.p, i64 0, %$arity %nargs
-  --
-  -- store %$box %a, %$box* %pa
-  -- %ptarget = getelementptr inbounds %$closure, %$closure* %clp, i64 0, i32 0
-  -- %target0 = load %$fn*, %$fn** %ptarget, align 8
-  -- %target = bitcast %$fn* %target0 to %$slowI*
-  -- %res = call i32 %target(%$box* %args2)
-  -- ret i32 %res
