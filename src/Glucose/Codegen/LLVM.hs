@@ -10,6 +10,7 @@ import Control.Monad.Writer
 import Data.Foldable
 import Data.List
 import qualified Data.Set as Set
+import Data.Traversable
 import Glucose.Identifier
 -- import Glucose.IR as IR
 import Glucose.IR.Checked as IR
@@ -41,18 +42,18 @@ definition (Definition (extract -> Identifier n) def) = let name = mkName n in
   mapLLVMT (withNewScope name) $ case extract def of
     Reference Global (Identifier to) rep _ -> alias name (GlobalReference (mkName to) $ llvmType rep) (llvmType rep)
     Lambda args expr -> do
-      void $ defineFunction (slowName name) External (LLVM.Arg (mkName "args") (Ptr box))
-      void $ defineFunction name External (map (argument . extract) args) (ret =<< expression (extract expr))
+      let llvmArgs = map (argument . extract) args
+      void $ defineWrapper =<< defineFunction name External llvmArgs (ret =<< expression (extract expr))
     _ -> void $ defineVariable name External $ expression (extract def)
 
-defineWrapper :: Name -> [IR.Arg] -> LLVM LLVM.Expression
-defineWrapper name args = defineFunction (slowName name) External pargs $ do
-  let pargs = LLVM.Arg (mkName "args") (Ptr box)
-  for_ [0..length args-1] $ \i -> do
-    let arg = args !! i
-    parg <- getElementPtr (argReference pargs) i
-    asArg (typeOf arg) parg
-
+defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
+defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
+  defineFunction (slowName name) External [pargs] $ do
+    args <- for [0..length argTypes-1] $ \i -> do
+      let argType = argTypes !! i
+      parg <- flip bitcast (Ptr argType) =<< getElementPtr (argReference pargs) [i64 i]
+      load parg
+    ret =<< call fn args
 
 slowName :: Name -> Name
 slowName (Name n) = Name $ n <> "$$"
