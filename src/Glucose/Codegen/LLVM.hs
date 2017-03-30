@@ -43,7 +43,7 @@ definition (Definition (extract -> Identifier n) def) = let name = mkName n in
     Reference Global (Identifier to) rep _ -> alias name (GlobalReference (mkName to) $ llvmType rep) (llvmType rep)
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
-      void $ defineWrapper =<< defineFunction name External llvmArgs (ret =<< expression (extract expr))
+      void $ defineFunction name External llvmArgs (ret =<< expression (extract expr))
     _ -> void $ defineVariable name External $ expression (extract def)
 
 defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
@@ -95,25 +95,30 @@ buildLambda name linkage args def = do
   lambda <- defineFunction name linkage fnArgs $ ret =<< expression def
   if null captured
     then pure lambda
-    else buildClosure lambda $ map argReference captured
+    else do
+      slow <- defineWrapper lambda
+      buildClosure (length fnArgs) slow $ map argReference captured
 
 withNewGlobal :: (Name -> LLVM a) -> LLVM a
 withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name) (f name)
 
-buildClosure :: LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
-buildClosure f args = do
-  ptr <- heapAllocN $ 64 * (2 + length args)
+buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
+buildClosure narity f args = do
+  ptr <- heapAllocN $ 8 * (2 + length args)
   pclosure <- bitcast ptr (Ptr closure)
   pfn <- getElementPtr pclosure [i64 0, i32 0]
   rfn <- bitcast f (Ptr fn)
+  -- slow <- load =<< flip getElementPtr [i64 (-1)] =<< bitcast f (Ptr fn)
   store rfn pfn
   parity <- getElementPtr pclosure [i64 0, i32 1]
-  store (integer arity $ length args) parity
+  store (integer arity narity) parity
+  pnargs <- getElementPtr pclosure [i64 0, i32 2]
+  store (integer arity $ length args) pnargs
   mapM_ (storeArg pclosure) $ zip [0..] args
-  -- pure ptr
+  pure ptr
 
-  untagged <- flip inttoptr box =<< andOp (integer size (-16)) =<< ptrtoint ptr size
-  pure untagged
+  -- untagged <- flip inttoptr box =<< andOp (integer size (-16)) =<< ptrtoint ptr size
+  -- pure untagged
 
   -- tagged <- orOp untagged (integer arity $ length args)
   -- inttoptr tagged box
@@ -133,18 +138,18 @@ genCall fn (params, llvmType -> rep, llvmType -> ty) = do
       case LLVM.typeOf fn of
         Ptr LLVM.Function{} -> LLVM.call fn ssaArgs
         _ -> do
-          fnApply <- getApply retType argTypes
+          fnApply <- getApply ApplyUnknown retType argTypes
           result <- LLVM.call fnApply (ssaArgs ++ [bitcastFunctionRef fn])
           asArg (LLVM.returnType ty) result
       -- ssaFn <- asFunction fn $ LLVM.Ptr ty
       -- LLVM.call ssaFn ssaArgs
     _ -> error $ "Unsupported: " <> show ty -- TODO
 
-getApply :: LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
-getApply returnTy tys = do
+getApply :: ApplyType -> LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
+getApply applyType returnTy tys = do
   let genType = GeneratedApply $ ApplyFn ApplyUnknown (typeRep returnTy) (map typeRep tys)
   tell $ Set.singleton genType
-  pure $ LLVM.GlobalReference (generatedName genType) (LLVM.Function (varType returnTy) (map varType tys))
+  pure $ LLVM.GlobalReference (generatedName genType) (generatedType genType)
 
 asArg :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
 asArg ty arg | ty == LLVM.typeOf arg = pure arg

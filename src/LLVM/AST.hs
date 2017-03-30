@@ -29,14 +29,17 @@ data Assignment = Call Expression [Expression]
                 | GEP Expression [Expression]
                 | Convert ConversionOp Expression Type
                 | BinaryOp BinaryOp Expression Expression
+                | Phi [(Expression, Name)]
   deriving (Eq)
 
 data Terminator = Return Expression
                 | Branch Expression Name Name
+                | Jump Name
                 | Unreachable
   deriving (Eq)
 
 data Expression = Literal Literal
+                | Undefined Type
                 | GlobalReference Name Type
                 | LocalReference Name Type
                 | ConstConvert ConversionOp Expression Type
@@ -122,10 +125,13 @@ instance Show Assignment where
     "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
   show (Convert op expr ty) = show op ++ " " ++ withType expr ++ " to " ++ show ty
   show (BinaryOp op a b) = show op ++ " " ++ withType a ++ ", " ++ show b
+  show phi@(Phi preds) = "phi " ++ show (typeOf phi) ++ intercalate ", " (map showPred preds) where
+    showPred (value, label) = "[" ++ show value ++ ", label " ++ local label ++ "]"
 
 instance Show Terminator where
   show (Return expr) = "ret " ++ withType expr
   show (Branch cond ifTrue ifFalse) = "br " ++ withType cond ++ ", label " ++ local ifTrue ++ ", label " ++ local ifFalse
+  show (Jump label) = "br " ++ local label
   show Unreachable = "unreachable"
 
 instance Show ConversionOp where
@@ -149,6 +155,7 @@ instance Show Comparison where
 
 instance Show Expression where
   show (Literal value) = show value
+  show (Undefined _) = "undef"
   show (GlobalReference name _) = global name
   show (LocalReference name _) = local name
   show (ConstConvert op expr ty) = show op ++ "(" ++ withType expr ++ " to " ++ show ty ++ ")"
@@ -258,6 +265,7 @@ instance Typed Assignment where
       _ -> error $ "cannot getElementPtr of non-aggregate value type: " ++ show ty
   typeOf (Convert _ _ ty) = ty
   typeOf (BinaryOp op a _) = opType op $ typeOf a
+  typeOf (Phi ((a,_):_)) = typeOf a
 
 instance Typed Terminator where
   typeOf (Return expr) = typeOf expr
@@ -265,6 +273,7 @@ instance Typed Terminator where
 
 instance Typed Expression where
   typeOf (Literal value) = typeOf value
+  typeOf (Undefined ty) = ty
   typeOf (GlobalReference _ ty) = Ptr ty
   typeOf (LocalReference _ ty) = ty
   typeOf (ConstConvert _ _ ty) = ty

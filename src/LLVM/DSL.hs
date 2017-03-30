@@ -150,17 +150,34 @@ subOp = binaryOp Sub
 mulOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 mulOp = binaryOp Mul
 
+inc :: Monad m => Expression -> LLVMT m Expression
+inc a = addOp a $ integer (typeOf a) 1
+
+dec :: Monad m => Expression -> LLVMT m Expression
+dec a = subOp a $ integer (typeOf a) 1
+
 icmp :: Monad m => Comparison -> Expression -> Expression -> LLVMT m Expression
 icmp = binaryOp . ICmp
 
 binaryOp :: Monad m => BinaryOp -> Expression -> Expression -> LLVMT m Expression
 binaryOp = ((assign .) .) . BinaryOp
 
+phi :: Monad m => [(Expression, Name)] -> LLVMT m Expression
+phi = assign . Phi
+
 label :: Monad m => Name -> LLVMT m ()
 label name = maybeLabel .= Just name
 
+label_ :: Monad m => Name -> LLVMT m ()
+label_ name = do
+  jump name
+  maybeLabel .= Just name
+
 ret :: Monad m => Expression -> LLVMT m ()
 ret = terminator . Return
+
+jump :: Monad m => Name -> LLVMT m ()
+jump = terminator . Jump
 
 br :: Monad m => Expression -> Name -> Name -> LLVMT m ()
 br = ((terminator .) .) . Branch
@@ -203,6 +220,9 @@ float F64 value = Literal $ FloatLiteral Nothing (fromRational $ toRational valu
 float (Custom name ty) value = case float ty value of
   Literal (FloatLiteral _ value) -> Literal $ FloatLiteral (Just name) value
 float ty _ = error $ "not a valid type for a floating-point literal: " ++ show ty
+
+undef :: Type -> Expression
+undef = Undefined
 
 -- * Utilities
 

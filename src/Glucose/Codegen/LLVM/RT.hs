@@ -1,11 +1,13 @@
 module Glucose.Codegen.LLVM.RT
 (
   functionDeclarations, heapAlloc, heapAllocN,
-  Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..), generateFunction, generatedName, typeRep
+  Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
+  generateFunction, generatedName, generatedType, typeRep
 ) where
 
 import Data.Foldable
 import Data.Text (pack)
+import Data.Traversable
 import Glucose.Codegen.LLVM.Types
 import Glucose.VarGen
 import LLVM.AST
@@ -23,14 +25,23 @@ _heapAlloc = (rtName "heapAlloc", Parameter box True True, [I 64], FunctionAttri
 _memcpy :: (Name, Parameter Type, [Type], FunctionAttributes)
 _memcpy = ("llvm.memcpy.p0i8.p0i8.i64", Parameter Void False False, [Ptr (I 8), Ptr (I 8), I 64, I 32, I 1], FunctionAttributes Nothing)
 
+_assume :: (Name, Parameter Type, [Type], FunctionAttributes)
+_assume = ("llvm.assume", Parameter Void False False, [I 1], FunctionAttributes Nothing)
+
 functionDeclarations :: [Global]
-functionDeclarations = map (uncurry4 FunctionDeclaration) [ _memcpy, _heapAlloc ]
+functionDeclarations = map (uncurry4 FunctionDeclaration) [ _assume, _memcpy, _heapAlloc ]
 
 heapAlloc :: Monad m => Expression -> LLVMT m Expression
-heapAlloc bytes = callFn _heapAlloc [bytes]
+heapAlloc bytes = do
+  ptr <- callFn _heapAlloc [bytes]
+  assume =<< icmp Eq (integer size 0) =<< andOp (integer size 15) =<< ptrtoint ptr size
+  pure ptr
 
 heapAllocN :: Monad m => Int -> LLVMT m Expression
 heapAllocN = heapAlloc . i64
+
+assume :: Monad m => Expression -> LLVMT m ()
+assume cond = callFn_ _assume [cond]
 
 memcpy :: Monad m => Expression -> Expression -> Expression -> Int -> LLVMT m ()
 memcpy to from bytes align = do
@@ -52,7 +63,7 @@ data GeneratedFn = GeneratedApply ApplyFn
 data ApplyFn = ApplyFn ApplyType Representation [Representation]
   deriving (Eq, Ord)
 
-data ApplyType = ApplyUnknown | ApplyPartial -- TODO
+data ApplyType = ApplyUnknown | ApplySlow
   deriving (Eq, Ord)
 
 data Representation = I32Rep | F64Rep | BoxRep
@@ -85,20 +96,42 @@ generatedArgs = zipWith Arg argNames . map repType
 generatedName :: GeneratedFn -> Name
 generatedName (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) =
   rtName . pack $ "uapply" ++ map repCode (resultType : argTypes)
+generatedName (GeneratedApply (ApplyFn ApplySlow resultType argTypes)) =
+  rtName . pack $ "slow" ++ map repCode (resultType : argTypes)
+
+untag :: Monad m => Expression -> Type -> LLVMT m Expression
+untag p ty = do
+  bits <- ptrtoint p size
+  untagged <- andOp bits $ integer size (-tagMask - 1)
+  inttoptr untagged ty
+
+generatedType :: GeneratedFn -> Type
+generatedType (GeneratedApply (ApplyFn ApplySlow resultType argTypes)) = functionType resultType [BoxRep, BoxRep]
+generatedType (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) = functionType resultType argTypes
 
 generateFunction :: GeneratedFn -> Global
 generateFunction = evalLLVM . \case
+  toGen@(GeneratedApply (ApplyFn ApplySlow resultType argTypes)) ->
+    let fn = Arg "fn" box
+        args = Arg "args" (Ptr box)
+     in singleFunctionDefinition (generatedName toGen) LinkOnceODR [args, fn] $ do
+          fp <- untag (argReference fn) $ functionType resultType argTypes
+          args <- for [0..length argTypes-1] $ \i -> do
+            let argType = argTypes !! i
+            parg <- flip bitcast (Ptr $ repType argType) =<< getElementPtr (argReference args) [i64 i]
+            load parg
+          ret =<< call fp args
   toGen@(GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) ->
     let fn = Arg "fn" box
         args = generatedArgs argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) $ do
           toMask <- ptrtoint (argReference fn) size
-          tag <- andOp toMask $ i32 tagMask
+          tag <- trunc toMask (I 4)
           isTrivial <- icmp Eq tag (i32 $ length args)
           br isTrivial "Trivial" "Nontrivial"
 
           label "Trivial"
-          fp <- flip inttoptr (functionType resultType argTypes) =<< subOp toMask tag
+          fp <- untag (argReference fn) (functionType resultType argTypes)
           ret =<< call fp (map argReference args)
 
           label "Nontrivial"
@@ -106,7 +139,7 @@ generateFunction = evalLLVM . \case
           br isClosure "Closure" "Function"
 
           label "Function"
-          unreachable -- TODO
+          ret $ undef (repType resultType) -- TODO
 
           label "Closure"
           -- Tag bits were 0 so no need to mask
@@ -126,14 +159,23 @@ generateFunction = evalLLVM . \case
           ptotal <- flip bitcast (Ptr box) =<< heapAlloc bytes
 
           -- Push previously applied arguments
-          bytesApplied <- mulOp napplied bytesPer
-          memcpy ptotal papplied bytesApplied 16
+          label_ "PushArgs"
+          inext' <- newLocal
+          let inext = LocalReference inext' arity
+          iarg <- phi [(integer arity 0, "Closure"), (inext, "PushArgs")]
+          parg <- getElementPtr ptotal [iarg]
+          flip store parg =<< load =<< getElementPtr papplied [iarg]
+          state $ Assignment inext' $ binaryOp Add iarg $ integer arity 1
+          pushed <- icmp Eq inext napplied
+          br pushed "Pushed" "PushArgs"
+
+          label "Pushed"
 
           -- Push new arguments
           for_ [0..length args - 1] $ \i -> do
             let arg = args !! i
-            iarg <- addOp napplied (i64 $ i+1)
-            parg <- flip bitcast (Ptr $ typeOf arg)  =<< getElementPtr ptotal [iarg]
+            iarg <- inc napplied
+            parg <- flip bitcast (Ptr $ typeOf arg) =<< getElementPtr ptotal [iarg]
             store (argReference arg) parg
 
           -- Make the call
