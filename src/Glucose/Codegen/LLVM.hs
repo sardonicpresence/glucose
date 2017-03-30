@@ -51,7 +51,7 @@ defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs =
   defineFunction (slowName name) External [pargs] $ do
     args <- for [0..length argTypes-1] $ \i -> do
       let argType = argTypes !! i
-      parg <- flip bitcast (Ptr argType) =<< getElementPtr (argReference pargs) [i64 i]
+      parg <- flip bitcast (Ptr argType) =<< getelementptr (argReference pargs) [i64 i]
       load parg
     ret =<< call fn args
 
@@ -106,13 +106,13 @@ buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Express
 buildClosure narity f args = do
   ptr <- heapAllocN $ 8 * (2 + length args)
   pclosure <- bitcast ptr (Ptr closure)
-  pfn <- getElementPtr pclosure [i64 0, i32 0]
+  pfn <- getelementptr pclosure [i64 0, i32 0]
   rfn <- bitcast f (Ptr fn)
-  -- slow <- load =<< flip getElementPtr [i64 (-1)] =<< bitcast f (Ptr fn)
+  -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
   store rfn pfn
-  parity <- getElementPtr pclosure [i64 0, i32 1]
+  parity <- getelementptr pclosure [i64 0, i32 1]
   store (integer arity narity) parity
-  pnargs <- getElementPtr pclosure [i64 0, i32 2]
+  pnargs <- getelementptr pclosure [i64 0, i32 2]
   store (integer arity $ length args) pnargs
   mapM_ (storeArg pclosure) $ zip [0..] args
   pure ptr
@@ -124,7 +124,7 @@ buildClosure narity f args = do
   -- inttoptr tagged box
   where
     storeArg pclosure (i, arg) = do
-      parg <- getElementPtr pclosure [i64 0, i32 3, i32 i]
+      parg <- getelementptr pclosure [i64 0, i32 3, i32 i]
       store arg parg
 
 partialApply :: Partial -> LLVM LLVM.Expression

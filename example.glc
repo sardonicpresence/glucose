@@ -24,4 +24,4 @@ test = \a -> _test
 test2 = \a -> _const id a
 test4 = \a b -> _const _const a test2 b
 test5 = \a b -> id \c -> _const a c
-main = \a -> test5 test2 _const test5 test4 test5
+main = \a -> test5 test2 _const test5 test4 foo

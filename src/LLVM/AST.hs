@@ -1,5 +1,6 @@
 module LLVM.AST where
 
+import Control.Lens
 import Data.List
 import Data.Maybe
 import LLVM.Name
@@ -44,6 +45,7 @@ data Expression = Literal Literal
                 | LocalReference Name Type
                 | ConstConvert ConversionOp Expression Type
                 | ConstBinaryOp BinaryOp Expression Expression
+                | Placeholder Name Type
   deriving (Eq)
 
 data Arg = Arg Name Type deriving (Eq)
@@ -76,6 +78,24 @@ data Mangling = Elf | Mips | MachO | Windows | Windowsx86 deriving (Eq)
 
 data Triple = Triple String String String deriving (Eq)
 
+-- * Lenses
+
+class References a where
+  expressions :: Traversal' a Expression
+instance References Statement where
+  expressions f (Assignment name assignment) = Assignment name <$> expressions f assignment
+  expressions f (VoidCall fn args) = VoidCall <$> f fn <*> traverse f args
+  expressions f (Store from to) = Store <$> f from <*> f to
+instance References Assignment where
+  expressions f (Call fn args) = Call <$> f fn <*> traverse f args
+  expressions f (Load ptr) = Load <$> f ptr
+  expressions f (GEP ptr indices) = GEP <$> f ptr <*> traverse f indices
+  expressions f (Convert op arg ty) = Convert op <$> f arg <*> pure ty
+  expressions f (BinaryOp op a b) = BinaryOp op <$> f a <*> f b
+  expressions f (Phi preds) = Phi <$> traverse (traverseOf _1 f) preds
+
+-- replaceholder :: Name -> Name -> Statement -> Statement
+-- replaceholder f
 
 -- * Show instances
 
@@ -125,13 +145,13 @@ instance Show Assignment where
     "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
   show (Convert op expr ty) = show op ++ " " ++ withType expr ++ " to " ++ show ty
   show (BinaryOp op a b) = show op ++ " " ++ withType a ++ ", " ++ show b
-  show phi@(Phi preds) = "phi " ++ show (typeOf phi) ++ intercalate ", " (map showPred preds) where
-    showPred (value, label) = "[" ++ show value ++ ", label " ++ local label ++ "]"
+  show phi@(Phi preds) = "phi " ++ show (typeOf phi) ++ " " ++ intercalate ", " (map showPred preds) where
+    showPred (value, label) = "[" ++ show value ++ ", " ++ local label ++ "]"
 
 instance Show Terminator where
   show (Return expr) = "ret " ++ withType expr
   show (Branch cond ifTrue ifFalse) = "br " ++ withType cond ++ ", label " ++ local ifTrue ++ ", label " ++ local ifFalse
-  show (Jump label) = "br " ++ local label
+  show (Jump label) = "br label " ++ local label
   show Unreachable = "unreachable"
 
 instance Show ConversionOp where
@@ -160,6 +180,7 @@ instance Show Expression where
   show (LocalReference name _) = local name
   show (ConstConvert op expr ty) = show op ++ "(" ++ withType expr ++ " to " ++ show ty ++ ")"
   show (ConstBinaryOp op a b) = show op ++ "(" ++ withType a ++ ", " ++ withType b ++ ")"
+  show Placeholder{} = error "Placeholder has not been replaced"
 
 instance Show Linkage where
   show External = ""
@@ -262,7 +283,7 @@ instance Typed Assignment where
         Literal (IntegerLiteral _ _ a) -> fromInteger a
         Literal a -> error $ "cannot use non-integral type as an index: " ++ show (typeOf a)
         _ -> error "cannot use a non-constant expression to index into a structure type"
-      _ -> error $ "cannot getElementPtr of non-aggregate value type: " ++ show ty
+      _ -> error $ "cannot getelementptr of non-aggregate value type: " ++ show ty
   typeOf (Convert _ _ ty) = ty
   typeOf (BinaryOp op a _) = opType op $ typeOf a
   typeOf (Phi ((a,_):_)) = typeOf a
@@ -278,6 +299,7 @@ instance Typed Expression where
   typeOf (LocalReference _ ty) = ty
   typeOf (ConstConvert _ _ ty) = ty
   typeOf (ConstBinaryOp op a _) = opType op $ typeOf a
+  typeOf (Placeholder _ ty) = ty
 
 instance Typed Arg where
   typeOf (Arg _ ty) = ty

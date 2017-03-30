@@ -23,13 +23,13 @@ target triple = "x86_64-pc-windows"
 @MEM_RESERVE_COMMIT = private unnamed_addr constant i32 12288
 @MEM_READWRITE = private unnamed_addr constant i32 4
 declare dllimport i8* @VirtualAlloc(i8*, i64, i32, i32)
-declare dllimport void @ExitThread(i32) nounwind ; noreturn produces less minimal instructions in _start
+declare dllimport void @ExitProcess(i32) nounwind ; noreturn produces less minimal instructions in _start
 
 declare i32 @main(%$box) unnamed_addr nounwind
 
 define void @_start() unnamed_addr norecurse noreturn nounwind {
   %1 = call i32 @main(%$box null)
-  tail call void @ExitThread(i32 %1)
+  tail call void @ExitProcess(i32 %1)
   ret void
 }
 

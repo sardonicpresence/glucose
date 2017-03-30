@@ -106,7 +106,7 @@ untag p ty = do
   inttoptr untagged ty
 
 generatedType :: GeneratedFn -> Type
-generatedType (GeneratedApply (ApplyFn ApplySlow resultType argTypes)) = functionType resultType [BoxRep, BoxRep]
+generatedType (GeneratedApply (ApplyFn ApplySlow resultType _)) = functionType resultType [BoxRep, BoxRep]
 generatedType (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) = functionType resultType argTypes
 
 generateFunction :: GeneratedFn -> Global
@@ -118,7 +118,7 @@ generateFunction = evalLLVM . \case
           fp <- untag (argReference fn) $ functionType resultType argTypes
           args <- for [0..length argTypes-1] $ \i -> do
             let argType = argTypes !! i
-            parg <- flip bitcast (Ptr $ repType argType) =<< getElementPtr (argReference args) [i64 i]
+            parg <- flip bitcast (Ptr $ repType argType) =<< getelementptr (argReference args) [i64 i]
             load parg
           ret =<< call fp args
   toGen@(GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) ->
@@ -144,12 +144,12 @@ generateFunction = evalLLVM . \case
           label "Closure"
           -- Tag bits were 0 so no need to mask
           pclosure <- bitcast (argReference fn) (Ptr closure)
-          napplied <- flip zext (I 64) =<< load =<< getElementPtr pclosure [i64 0, i32 2]
-          papplied <- getElementPtr pclosure [i64 0, i32 3, i32 0]
-          ntotal <- addOp napplied $ i64 (length args)
+          napplied <- load =<< getelementptr pclosure [i64 0, i32 2]
+          papplied <- getelementptr pclosure [i64 0, i32 3, i32 0]
+          ntotal <- flip zext (I 64) =<< addOp napplied (integer arity $ length args)
 
           -- Determine number of bytes per argument
-          papplied2 <- getElementPtr pclosure [i64 0, i32 3, i32 1]
+          papplied2 <- getelementptr pclosure [i64 0, i32 3, i32 1]
           p1 <- ptrtoint papplied size
           p2 <- ptrtoint papplied2 size
           bytesPer <- subOp p2 p1
@@ -159,15 +159,13 @@ generateFunction = evalLLVM . \case
           ptotal <- flip bitcast (Ptr box) =<< heapAlloc bytes
 
           -- Push previously applied arguments
-          label_ "PushArgs"
-          inext' <- newLocal
-          let inext = LocalReference inext' arity
-          iarg <- phi [(integer arity 0, "Closure"), (inext, "PushArgs")]
-          parg <- getElementPtr ptotal [iarg]
-          flip store parg =<< load =<< getElementPtr papplied [iarg]
-          state $ Assignment inext' $ binaryOp Add iarg $ integer arity 1
+          label_ "Applied"
+          iarg <- phi [(integer arity 0, "Closure"), (placeholder "inext" arity, "Applied")]
+          parg <- getelementptr ptotal [iarg]
+          flip store parg =<< load =<< getelementptr papplied [iarg]
+          inext <- as "inext" =<< addOp iarg (integer arity 1)
           pushed <- icmp Eq inext napplied
-          br pushed "Pushed" "PushArgs"
+          br pushed "Pushed" "Applied"
 
           label "Pushed"
 
@@ -175,10 +173,10 @@ generateFunction = evalLLVM . \case
           for_ [0..length args - 1] $ \i -> do
             let arg = args !! i
             iarg <- inc napplied
-            parg <- flip bitcast (Ptr $ typeOf arg) =<< getElementPtr ptotal [iarg]
+            parg <- flip bitcast (Ptr $ typeOf arg) =<< getelementptr ptotal [iarg]
             store (argReference arg) parg
 
           -- Make the call
           let tyTarget = Function (repType resultType) [Ptr box]
-          target <- flip bitcast (Ptr tyTarget) =<< load =<< getElementPtr pclosure [i64 0, i32 0]
+          target <- flip bitcast (Ptr tyTarget) =<< load =<< getelementptr pclosure [i64 0, i32 0]
           ret =<< call target [ptotal]

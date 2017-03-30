@@ -95,10 +95,13 @@ alias = ((define .) .) . Alias
 define :: Monad m => Global -> LLVMT m ()
 define def = globals <>= [def]
 
+placeholder :: Name -> Type -> Expression
+placeholder = Placeholder
+
 -- * Statements
 
 call :: Monad m => Expression -> [Expression] -> LLVMT m Expression
-call = (assign .) . Call
+call = (assignNew .) . Call
 
 call_ :: Monad m => Expression -> [Expression] -> LLVMT m ()
 call_ = (state .) . VoidCall
@@ -107,13 +110,13 @@ store :: Monad m => Expression -> Expression -> LLVMT m ()
 store = (state .) . Store
 
 load :: Monad m => Expression -> LLVMT m Expression
-load = assign . Load
+load = assignNew . Load
 
 bitcast :: Monad m => Expression -> Type -> LLVMT m Expression
 bitcast = convert Bitcast
 
-getElementPtr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
-getElementPtr = (assign .) . GEP
+getelementptr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
+getelementptr = (assignNew .) . GEP
 
 ptrtoint :: Monad m => Expression -> Type -> LLVMT m Expression
 ptrtoint = convert PtrToInt
@@ -130,7 +133,7 @@ zext = convert Zext
 convert :: Monad m => ConversionOp -> Expression -> Type -> LLVMT m Expression
 convert _ a ty | typeOf a == ty = pure a
 convert _ a (Custom _ ty) | typeOf a == ty = pure a
-convert op a ty = assign $ Convert op a ty
+convert op a ty = assignNew $ Convert op a ty
 
 andOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 andOp = binaryOp And
@@ -160,10 +163,10 @@ icmp :: Monad m => Comparison -> Expression -> Expression -> LLVMT m Expression
 icmp = binaryOp . ICmp
 
 binaryOp :: Monad m => BinaryOp -> Expression -> Expression -> LLVMT m Expression
-binaryOp = ((assign .) .) . BinaryOp
+binaryOp = ((assignNew .) .) . BinaryOp
 
 phi :: Monad m => [(Expression, Name)] -> LLVMT m Expression
-phi = assign . Phi
+phi = assignNew . Phi
 
 label :: Monad m => Name -> LLVMT m ()
 label name = maybeLabel .= Just name
@@ -185,11 +188,21 @@ br = ((terminator .) .) . Branch
 unreachable :: Monad m => LLVMT m ()
 unreachable = terminator Unreachable
 
-assign :: Monad m => Assignment -> LLVMT m Expression
-assign assignment = do
+assignNew :: Monad m => Assignment -> LLVMT m Expression
+assignNew assignment = do
   name <- newLocal
-  state $ Assignment name assignment
+  assign name assignment
   pure $ LocalReference name $ typeOf assignment
+
+as :: Monad m => Name -> Expression -> LLVMT m Expression
+as placeholder ref = do
+  statements . mapped . expressions %= \case
+    Placeholder var _ | var == placeholder -> ref
+    a -> a
+  pure ref
+
+assign :: Monad m => Name -> Assignment -> LLVMT m ()
+assign name assignment = state $ Assignment name assignment
 
 terminator :: Monad m => Terminator -> LLVMT m ()
 terminator term = modify $ \(DSL globals blocks label statements lastVar) ->

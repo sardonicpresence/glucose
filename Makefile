@@ -12,10 +12,10 @@ example.exe : example.bc src/RT/rt.bc
 	llvm-mc -arch=x86-64 -mc-relax-all -mcpu=broadwell -filetype=obj $^ -o $@
 
 %.bc : %.ll
-	opt -O3 $^ -o=$@
+	opt -O3 $^ -o=$@ -mcpu=broadwell
 
 %.s : %.bc
-	llc -O3 $^ -o=$@
+	llc -O3 $^ -o=$@ -mcpu=broadwell
 
 %.ll : %.glc $(BIN)/glucose.exe
 	stack exec glucose -- $<
