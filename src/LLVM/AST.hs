@@ -52,6 +52,7 @@ data Arg = Arg Name Type deriving (Eq)
 
 data Literal = IntegerLiteral (Maybe Name) Int Integer
              | FloatLiteral (Maybe Name) Double
+             | ZeroInitializer Type
   deriving (Eq)
 
 data Type = Void | I Int | F64 | Ptr Type | Function Type [Type] | Custom Name Type | Opaque
@@ -193,6 +194,7 @@ instance Show Arg where
 instance Show Literal where
   show (IntegerLiteral _ _ n) = show n
   show (FloatLiteral _ n) = show n
+  show (ZeroInitializer _) = "zeroinitializer"
 
 instance Show Type where
   show Void = "void"
@@ -307,6 +309,7 @@ instance Typed Arg where
 instance Typed Literal where
   typeOf (IntegerLiteral name bits _) = maybe (I bits) (flip Custom $ I bits) name
   typeOf (FloatLiteral name _) = maybe F64 (flip Custom F64) name
+  typeOf (ZeroInitializer ty) = ty
 
 withType :: (Typed a, Show a) => a -> String
 withType a = show (typeOf a) ++ " " ++ show a

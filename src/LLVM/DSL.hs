@@ -213,6 +213,9 @@ state statement = statements <>= [statement]
 
 -- * Expressions
 
+zeroinitializer :: Type -> Expression
+zeroinitializer = Literal . ZeroInitializer
+
 i32 :: Int -> Expression
 i32 = integer (I 32)
 

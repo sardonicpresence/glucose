@@ -6,17 +6,18 @@ target triple = "x86_64-pc-windows"
 
 %$boxed = type opaque
 %$box = type %$boxed*
-%$p = type i64
+%$size = type i64
 %$arity = type i16
+%$argsize = type i32
 %$fn = type opaque
 
 %$closure = type {
   %$fn*, ; Code pointer + tag bits (used for..?)
   %$arity, ; Arity of the function addressed by `code`
   %$arity, ; Number of args that follow
-  [0 x %$box] ; Variable number of bound arguments
+  %$argsize, ; Number of bytes of args that follow (only required if number-of-args is non-zero)
+  [0 x %$box] ; Variable number of bound arguments (assumed to be 16-byte aligned)
 }
-@$tag = private unnamed_addr constant %$p 7
 
 @MEM_COMMIT = private unnamed_addr constant i32 4096
 @MEM_RESERVE = private unnamed_addr constant i32 8192
@@ -33,8 +34,24 @@ define void @_start() unnamed_addr norecurse noreturn nounwind {
   ret void
 }
 
-define nonnull noalias align 8 %$box* @$heapAlloc(i64 %bytes) allocsize(0) nounwind align 16 {
-  %1 = call i8* @VirtualAlloc(i8* null, i64 %bytes, i32 12288, i32 4)
+define nonnull noalias align 16 %$box* @$heapAlloc(%$size %bytes) unnamed_addr allocsize(0) nounwind align 16 {
+  %1 = call i8* @VirtualAlloc(i8* null, %$size %bytes, i32 12288, i32 4)
   %2 = bitcast i8* %1 to %$box*
   ret %$box* %2
+}
+
+define void @memcpy(i8* align 16 %to, i8* align 16 %from, %$size %bytes) unnamed_addr align 16 nounwind {
+  %1 = icmp eq %$size %bytes, 0
+  br i1 %1, label %Done, label %Loop
+Loop:
+  %2 = phi %$size [0, %0], [%6, %Loop]
+  %3 = getelementptr inbounds i8, i8* %from, %$size %2
+  %4 = load i8, i8* %3
+  %5 = getelementptr inbounds i8, i8* %to, %$size %2
+  store i8 %4, i8* %5
+  %6 = add %$size %2, 1
+  %7 = icmp eq %$size %6, %bytes
+  br i1 %7, label %Done, label %Loop
+Done:
+  ret void
 }

@@ -5,6 +5,7 @@ import Glucose.Codegen.LLVM.RT
 import Glucose.Codegen.LLVM.Types
 
 import Control.Comonad
+import Control.Lens (imapM_)
 import Control.Monad.Trans (lift)
 import Control.Monad.Writer
 import Data.Foldable
@@ -59,11 +60,12 @@ slowName :: Name -> Name
 slowName (Name n) = Name $ n <> "$$"
 
 tagFunction :: LLVM.Expression -> LLVM.Expression
-tagFunction f = case LLVM.typeOf f of
-  Ptr (LLVM.Function _ args) ->
-    -- Uses 'add' to simplify with 'sub' in apply functions ('or' and 'and' doesn't appear to)
-    ConstConvert IntToPtr (ConstBinaryOp Add (ConstConvert PtrToInt f size) (integer size $ length args)) box
-  _ -> f
+tagFunction = id
+-- tagFunction f = case LLVM.typeOf f of
+--   Ptr (LLVM.Function _ args) ->
+--     -- Uses 'add' to simplify with 'sub' in apply functions ('or' and 'and' doesn't appear to)
+--     ConstConvert IntToPtr (ConstBinaryOp Add (ConstConvert PtrToInt f size) (integer size $ length args)) box
+--   _ -> f
 
 argument :: IR.Arg -> LLVM.Arg
 argument (IR.Arg (Identifier name) ty) = LLVM.Arg (mkName name) (llvmType ty)
@@ -99,33 +101,27 @@ buildLambda name linkage args def = do
       slow <- defineWrapper lambda
       buildClosure (length fnArgs) slow $ map argReference captured
 
+sizeOf :: LLVM.Type -> LLVM.Type -> LLVM LLVM.Expression
+sizeOf tySize ty = flip ptrtoint tySize =<< getelementptr (zeroinitializer $ Ptr ty) [i64 1]
+
 withNewGlobal :: (Name -> LLVM a) -> LLVM a
 withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name) (f name)
 
 buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
 buildClosure narity f args = do
-  ptr <- heapAllocN $ 8 * (2 + length args)
-  pclosure <- bitcast ptr (Ptr closure)
-  pfn <- getelementptr pclosure [i64 0, i32 0]
+  let tyClosure = closureType $ map LLVM.typeOf args
+  bytes <- sizeOf size tyClosure
+  ptr <- heapAlloc bytes
+  pclosure <- bitcast ptr (Ptr tyClosure)
   rfn <- bitcast f (Ptr fn)
   -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
-  store rfn pfn
-  parity <- getelementptr pclosure [i64 0, i32 1]
-  store (integer arity narity) parity
-  pnargs <- getelementptr pclosure [i64 0, i32 2]
-  store (integer arity $ length args) pnargs
-  mapM_ (storeArg pclosure) $ zip [0..] args
+  store rfn =<< getelementptr pclosure [i64 0, i32 0]
+  store (integer arity narity) =<< getelementptr pclosure [i64 0, i32 1]
+  store (integer arity $ length args) =<< getelementptr pclosure [i64 0, i32 2]
+  argBytes <- sizeOf argsize . Struct $ map LLVM.typeOf args
+  store argBytes =<< getelementptr pclosure [i64 0, i32 3]
+  flip imapM_ args $ \i arg -> store arg =<< getelementptr pclosure [i64 0, i32 4, i32 i]
   pure ptr
-
-  -- untagged <- flip inttoptr box =<< andOp (integer size (-16)) =<< ptrtoint ptr size
-  -- pure untagged
-
-  -- tagged <- orOp untagged (integer arity $ length args)
-  -- inttoptr tagged box
-  where
-    storeArg pclosure (i, arg) = do
-      parg <- getelementptr pclosure [i64 0, i32 3, i32 i]
-      store arg parg
 
 partialApply :: Partial -> LLVM LLVM.Expression
 partialApply _ = undefined -- TODO: partial application
@@ -146,7 +142,7 @@ genCall fn (params, llvmType -> rep, llvmType -> ty) = do
     _ -> error $ "Unsupported: " <> show ty -- TODO
 
 getApply :: ApplyType -> LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
-getApply applyType returnTy tys = do
+getApply _ returnTy tys = do
   let genType = GeneratedApply $ ApplyFn ApplyUnknown (typeRep returnTy) (map typeRep tys)
   tell $ Set.singleton genType
   pure $ LLVM.GlobalReference (generatedName genType) (generatedType genType)
