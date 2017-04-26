@@ -1,18 +1,21 @@
 BIN=$(shell cygpath -m `stack path --local-install-root`)/bin
 
+# PASSES=-inline -loop-unroll -gvn -simplifycfg -barrier -instcombine
+PASSES=-O3
+
 default : example.js example.exe
 
 # example.exe : example.o src\RT\rt.o
 # 	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
 
 example.exe : example.bc src/RT/rt.bc
-	lld-link $^ /subsystem:windows /entry:_start /out:$@ /debug /defaultlib:kernel32
+	lld-link $^ /subsystem:windows /entry:_start /out:$@ /debug /defaultlib:kernel32 /mllvm:-mcpu=broadwell /mllvm:-O3
 
 %.o : %.s
 	llvm-mc -arch=x86-64 -mc-relax-all -mcpu=broadwell -filetype=obj $^ -o $@
 
 %.bc : %.ll
-	opt -O3 $^ -o=$@ -mcpu=broadwell
+	opt $(PASSES) $^ -o=$@ -mcpu=broadwell
 
 %.s : %.bc
 	llc -O3 $^ -o=$@ -mcpu=broadwell

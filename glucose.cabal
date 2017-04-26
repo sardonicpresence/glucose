@@ -18,7 +18,6 @@ library
                      , text
                      , mtl
                      , containers
-                     , megaparsec
                      , lens
                      , comonad
                      , QuickCheck

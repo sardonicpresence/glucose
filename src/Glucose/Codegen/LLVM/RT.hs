@@ -1,6 +1,7 @@
 module Glucose.Codegen.LLVM.RT
 (
   functionDeclarations, heapAlloc, heapAllocN,
+  splitArgs,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
   generateFunction, generatedName, generatedType, typeRep
 ) where
@@ -20,14 +21,14 @@ uncurry4 :: (a -> b -> c -> d -> e) -> (a, b, c, d) -> e
 uncurry4 f (a, b, c, d) = f a b c d
 
 _heapAlloc :: (Name, Parameter Type, [Type], FunctionAttributes)
-_heapAlloc = (rtName "heapAlloc", Parameter box True True, [size], FunctionAttributes (Just 0))
+_heapAlloc = (rtName "heapAlloc", Parameter box True True (Just 16), [size], FunctionAttributes (Just 0))
 
 _memcpy :: (Name, Parameter Type, [Type], FunctionAttributes)
--- _memcpy = ("llvm.memcpy.p0i8.p0i8.i64", Parameter Void False False, [Ptr (I 8), Ptr (I 8), I 64, I 32, I 1], FunctionAttributes Nothing)
-_memcpy = ("memcpy", Parameter Void False False, [Ptr (I 8), Ptr (I 8), size], FunctionAttributes Nothing)
+_memcpy = ("llvm.memcpy.p0i8.p0i8.i64", Parameter Void False False Nothing, [Ptr (I 8), Ptr (I 8), I 64, I 32, I 1], FunctionAttributes Nothing)
+-- _memcpy = ("memcpy", Parameter Void False False, [Ptr (I 8), Ptr (I 8), size], FunctionAttributes Nothing)
 
 _assume :: (Name, Parameter Type, [Type], FunctionAttributes)
-_assume = ("llvm.assume", Parameter Void False False, [I 1], FunctionAttributes Nothing)
+_assume = ("llvm.assume", Parameter Void False False Nothing, [I 1], FunctionAttributes Nothing)
 
 functionDeclarations :: [Global]
 functionDeclarations = map (uncurry4 FunctionDeclaration) [ _assume, _memcpy, _heapAlloc ]
@@ -48,8 +49,8 @@ memcpy :: Monad m => Expression -> Expression -> Expression -> Int -> LLVMT m ()
 memcpy to from bytes align = do
   to' <- bitcast to (Ptr $ I 8)
   from' <- bitcast from (Ptr $ I 8)
-  callFn_ _memcpy [to', from', bytes]
-  -- callFn_ _memcpy [to', from', bytes, i32 align, integer (I 1) 0]
+  -- callFn_ _memcpy [to', from', bytes]
+  callFn_ _memcpy [to', from', bytes, i32 align, integer (I 1) 0]
 
   -- label_ "Start"
   -- noop <- icmp Eq bytes $ integer size 0
@@ -71,9 +72,17 @@ callFn (name, result, args, _) = call $ GlobalReference name $ Function (paramet
 callFn_ :: Monad m => (Name, Parameter Type, [Type], FunctionAttributes) -> [Expression] -> LLVMT m ()
 callFn_ (name, result, args, _) = call_ $ GlobalReference name $ Function (parameter result) args
 
+splitArgs :: [Type] -> ([Int], [Int], Type)
+splitArgs tys = (fst boxed, fst unboxed, Packed $ snd unboxed) where
+  indexed = zip [0..] tys :: [(Int,Type)]
+  boxed = unzip $ filter (isBoxed . snd) indexed
+  unboxed = unzip $ filter (not . isBoxed . snd) indexed
+  isBoxed = (BoxRep ==) . typeRep
+
+
 -- * Generated Functions
 
-data GeneratedFn = GeneratedApply ApplyFn
+newtype GeneratedFn = GeneratedApply ApplyFn
   deriving (Eq, Ord)
 
 data ApplyFn = ApplyFn ApplyType Representation [Representation]
@@ -86,7 +95,8 @@ data Representation = I32Rep | F64Rep | BoxRep
   deriving (Eq, Ord)
 
 typeRep :: Type -> Representation
-typeRep (I _) = I32Rep
+typeRep (I n) | n <= 32 = I32Rep
+typeRep (I n) = error $ show n ++ "-bit integers are not supported!"
 typeRep F64 = F64Rep
 typeRep _ = BoxRep
 
@@ -94,6 +104,11 @@ repType :: Representation -> Type
 repType I32Rep = I 32
 repType F64Rep = F64
 repType BoxRep = box
+
+repSize :: Representation -> Int
+repSize I32Rep = 32
+repSize F64Rep = 64
+repSize BoxRep = 64 -- TODO
 
 functionType :: Representation -> [Representation] -> Type
 functionType result args = Ptr $ Function (repType result) (map repType args)
@@ -127,6 +142,7 @@ generatedType (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) = func
 
 generateFunction :: GeneratedFn -> Global
 generateFunction = evalLLVM . \case
+  -- Are these always required? Only for public functions?
   toGen@(GeneratedApply (ApplyFn ApplySlow resultType argTypes)) ->
     let fn = Arg "fn" box
         args = Arg "args" (Ptr box)
@@ -140,7 +156,7 @@ generateFunction = evalLLVM . \case
   toGen@(GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) ->
     let fn = Arg "fn" box
         args = generatedArgs argTypes
-        argsType = Struct $ map repType argTypes
+        (boxed, unboxed, argsType) = splitArgs $ map repType argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) $ do
           toMask <- ptrtoint (argReference fn) size
           -- tag <- andOp toMask tagMask
@@ -162,8 +178,14 @@ generateFunction = evalLLVM . \case
           -- Tag bits were 0 so no need to mask
           pclosure <- bitcast (argReference fn) (Ptr closure)
           pfn <- load =<< getelementptr pclosure [i64 0, i32 0]
-          napplied <- load =<< getelementptr pclosure [i64 0, i32 2]
-          notPartial <- icmp Eq napplied $ integer arity 0
+          nunbound <- load =<< getelementptr pclosure [i64 0, i32 1]
+          nboxed <- load =<< getelementptr pclosure [i64 0, i32 2]
+          unboxedBytes <- flip zext size =<< load =<< getelementptr pclosure [i64 0, i32 3]
+          pboxed <- getelementptr pclosure [i64 0, i32 4]
+
+          noBoxed <- icmp Eq nboxed $ integer arity 0
+          noUnboxed <- icmp Eq unboxedBytes $ integer size 0
+          notPartial <- andOp noBoxed noUnboxed
           br notPartial "Raw" "Partial"
 
           label "Raw"
@@ -174,22 +196,44 @@ generateFunction = evalLLVM . \case
           ret =<< call raw (map argReference args)
 
           label "Partial"
-          papplied <- getelementptr pclosure [i64 0, i32 4]
           -- ntotal <- flip zext (I 64) =<< addOp napplied (integer arity $ length args)
 
           -- Allocate space for argument stack
-          bytes <- flip zext size =<< load =<< getelementptr pclosure [i64 0, i32 3]
-          ptotal <- flip bitcast (Ptr box) =<< heapAlloc bytes
+          nboxed' <- addOp nboxed $ integer arity (length boxed)
+          boxBytes <- sizeOf size box
+          boxedBytes <- mulOp boxBytes =<< zext nboxed' size
+          boundBytes <- addOp boxedBytes unboxedBytes
+          newBytes <- sizeOf size argsType
+          bytes <- addOp boundBytes newBytes
+          pargs <- flip bitcast (Ptr box) =<< heapAlloc bytes
+          -- ptotal <- flip bitcast (Ptr box) =<< alloca (I 8) bytes
 
-          -- Push previously applied arguments
-          memcpy ptotal papplied bytes argAlign
+          -- Push bound boxed arguments
+          label_ "PushBoxed"
+          iboxed <- phi [(integer arity 0, "Partial"), (placeholder "iboxed'" arity, "PushBoxed")]
+          from <- getelementptr pboxed [i64 0, iboxed]
+          to <- getelementptr pargs [iboxed]
+          flip store to =<< load from
+          iboxed' <- as "iboxed'" =<< inc iboxed
+          done <- icmp Eq iboxed' nboxed
+          br done "PushedBoxed" "PushBoxed"
+          label "PushedBoxed"
 
-          -- Push new arguments
-          pnew <- flip inttoptr (Ptr argsType) =<< addOp bytes =<< ptrtoint ptotal size
-          for_ [0..length args - 1] $ \i ->
-            store (argReference $ args !! i) =<< getelementptr pnew [i64 0, i32 i]
+          -- Push new boxed arguments
+          for_ (zip [0..] $ map (args !!) boxed) $ \(i, arg) ->
+            store (argReference arg) =<< getelementptr pargs . pure =<< addOp iboxed' (integer arity i)
+
+          -- Push bound unboxed arguments
+          punboxed <- getelementptr pboxed [i64 0, nboxed]
+          punboxed' <- getelementptr pargs [nboxed']
+          memcpy punboxed punboxed' unboxedBytes argAlign
+
+          -- Push new unboxed arguments
+          pnewUnboxed <- flip inttoptr (Ptr argsType) =<< addOp unboxedBytes =<< ptrtoint punboxed' size
+          for_ (zip [0..] $ map (args !!) unboxed) $ \(i, arg) ->
+            store (argReference arg) =<< getelementptr pnewUnboxed [i64 0, i32 i]
 
           -- Make the call
           let tyTarget = Function (repType resultType) [Ptr box]
           target <- bitcast pfn (Ptr tyTarget)
-          ret =<< call target [ptotal]
+          ret =<< call target [pargs]

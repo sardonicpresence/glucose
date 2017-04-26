@@ -6,7 +6,7 @@ import Data.List
 import Glucose.Identifier
 import Glucose.Parser.Source
 
-data Module ann = Module [FromSource (Definition ann)]
+newtype Module ann = Module [FromSource (Definition ann)]
 deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Module ann)
 
 data Definition ann = Definition (FromSource Identifier) (FromSource (Expression ann))
@@ -29,6 +29,7 @@ deriving instance Ord (Type ann) => Ord (Arg ann)
 instance Show (Type Checked) where
   show Integer = "Int"
   show Float = "Float"
+  show (Boxed ty) = "{" ++ show ty ++ "}"
   show (ADT name) = show name
   show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
   show (Function ar arg ret) = show arg ++ show ar ++ show ret
@@ -132,7 +133,7 @@ instance Annotations Unchecked where
 data Checked
 instance Annotations Checked where
   data Type Checked = Integer | Float | ADT Identifier | Function Arity (Type Checked) (Type Checked)
-                    | Bound Identifier
+                    | Bound Identifier | Boxed (Type Checked)
                     | Free Identifier -- Must be eliminated by type-checking (should be made seperate)
                     deriving (Eq, Ord)
   data RefKind Checked = Local | Global deriving (Eq)

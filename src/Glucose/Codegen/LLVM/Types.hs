@@ -48,10 +48,11 @@ rtTypeRep Fn = Opaque
 rtTypeRep Size = I 64
 rtTypeRep Arity = I 16
 rtTypeRep ArgSize = I 32
-rtTypeRep Closure = closureType []
+rtTypeRep Closure = closureType 0 []
 
-closureType :: [Type] -> Type
-closureType args = Struct [Ptr $ rtType Fn, rtType Arity, rtType Arity, rtType ArgSize, Struct args]
+closureType :: Int -> [Type] -> Type
+-- closureType 0 [] = Struct [Ptr fn, arity, arity, argsize, Array 0 box]
+closureType n args = Struct [Ptr fn, arity, arity, argsize, Array n box, Packed args]
 
 rtType :: RTType -> Type
 rtType = uncurry Custom . (rtTypeName &&& rtTypeRep)

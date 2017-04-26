@@ -32,7 +32,7 @@ data ErrorDetails
   deriving (Eq, Show)
 
 formatError :: Text -> CompileError -> Text
-formatError source (CompileError loc details) = showLocation loc <> ":\n" <> formatDetails source details
+formatError source (CompileError loc details) = showLocation loc <> ":\n" <> formatDetails source details <> "\n"
 
 formatDetails :: Text -> ErrorDetails -> Text
 formatDetails source = \case

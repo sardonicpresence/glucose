@@ -135,6 +135,9 @@ convert _ a ty | typeOf a == ty = pure a
 convert _ a (Custom _ ty) | typeOf a == ty = pure a
 convert op a ty = assignNew $ Convert op a ty
 
+alloca :: Monad m => Type -> Expression -> LLVMT m Expression
+alloca = (assignNew .) . Alloca
+
 andOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 andOp = binaryOp And
 
@@ -244,3 +247,6 @@ undef = Undefined
 
 newLocal :: Monad m => LLVMT m Name
 newLocal = do lastVar += 1; uses lastVar localName
+
+sizeOf :: Monad m => Type -> Type -> LLVMT m Expression
+sizeOf tySize ty = flip ptrtoint tySize =<< getelementptr (zeroinitializer $ Ptr ty) [i64 1]

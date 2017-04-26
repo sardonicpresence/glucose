@@ -5,10 +5,10 @@ import Glucose.Codegen.LLVM.RT
 import Glucose.Codegen.LLVM.Types
 
 import Control.Comonad
-import Control.Lens (imapM_)
 import Control.Monad.Trans (lift)
 import Control.Monad.Writer
 import Data.Foldable
+import Data.Function
 import Data.List
 import qualified Data.Set as Set
 import Data.Traversable
@@ -18,6 +18,8 @@ import Glucose.IR.Checked as IR
 import LLVM.AST as LLVM
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
+
+import Debug.Trace
 
 type Codegen = Writer (Set.Set GeneratedFn)
 
@@ -50,10 +52,12 @@ definition (Definition (extract -> Identifier n) def) = let name = mkName n in
 defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
 defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
   defineFunction (slowName name) External [pargs] $ do
-    args <- for [0..length argTypes-1] $ \i -> do
-      let argType = argTypes !! i
-      parg <- flip bitcast (Ptr argType) =<< getelementptr (argReference pargs) [i64 i]
-      load parg
+    let (boxed, unboxed, unboxedType) = splitArgs argTypes
+    let argsType = Struct [Array (length boxed) box, unboxedType]
+    pargs' <- bitcast (argReference pargs) (Ptr argsType)
+    argsBoxed <- for [0..length boxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 0, integer arity i]
+    argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, integer arity i]
+    let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
     ret =<< call fn args
 
 slowName :: Name -> Name
@@ -84,7 +88,13 @@ expression (Apply (extract -> f) (extract -> args)) = case flattenApply f args o
   Application rep root calls partial -> maybe full partialApply partial where
     full = do
       fn <- expression root
-      foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
+      foldlM genCall fn . traced logCalls $ callsWithTypes rep (IR.typeOf root) calls
+
+traced :: (a -> String) -> a -> a
+traced f a = trace (f a) a
+
+logCalls :: [([IR.Expression], IR.Type, IR.Type)] -> String
+logCalls = foldMap $ \(args, rep, ty) -> "[" ++ show rep ++ " <as> " ++ show ty ++ "](" ++ intercalate ", " (map show args) ++ ")\n"
 
 callsWithTypes :: IR.Type -> IR.Type -> [[IR.Expression]] -> [([IR.Expression], IR.Type, IR.Type)]
 callsWithTypes rep ty calls = zip3 calls (map fst foo) (map snd foo) where
@@ -101,26 +111,27 @@ buildLambda name linkage args def = do
       slow <- defineWrapper lambda
       buildClosure (length fnArgs) slow $ map argReference captured
 
-sizeOf :: LLVM.Type -> LLVM.Type -> LLVM LLVM.Expression
-sizeOf tySize ty = flip ptrtoint tySize =<< getelementptr (zeroinitializer $ Ptr ty) [i64 1]
-
 withNewGlobal :: (Name -> LLVM a) -> LLVM a
 withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name) (f name)
 
 buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
 buildClosure narity f args = do
-  let tyClosure = closureType $ map LLVM.typeOf args
+  let (boxed, unboxed, Packed unboxedTypes) = splitArgs $ map LLVM.typeOf args
+  let tyClosure = closureType (length boxed) unboxedTypes
   bytes <- sizeOf size tyClosure
   ptr <- heapAlloc bytes
   pclosure <- bitcast ptr (Ptr tyClosure)
   rfn <- bitcast f (Ptr fn)
   -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
   store rfn =<< getelementptr pclosure [i64 0, i32 0]
-  store (integer arity narity) =<< getelementptr pclosure [i64 0, i32 1]
-  store (integer arity $ length args) =<< getelementptr pclosure [i64 0, i32 2]
-  argBytes <- sizeOf argsize . Struct $ map LLVM.typeOf args
-  store argBytes =<< getelementptr pclosure [i64 0, i32 3]
-  flip imapM_ args $ \i arg -> store arg =<< getelementptr pclosure [i64 0, i32 4, i32 i]
+  store (integer arity $ narity - length args) =<< getelementptr pclosure [i64 0, i32 1]
+  store (integer arity $ length boxed) =<< getelementptr pclosure [i64 0, i32 2]
+  unboxedBytes <- sizeOf argsize (Packed unboxedTypes)
+  store unboxedBytes =<< getelementptr pclosure [i64 0, i32 3]
+  for_ (zip [0..] $ map (args !!) boxed) $ \(i, arg) ->
+    store arg =<< getelementptr pclosure [i64 0, i32 4, integer arity i]
+  for_ (zip [0..] $ map (args !!) unboxed) $ \(i, arg) ->
+    store arg =<< getelementptr pclosure [i64 0, i32 5, integer arity i]
   pure ptr
 
 partialApply :: Partial -> LLVM LLVM.Expression
@@ -153,7 +164,8 @@ asArg ty arg | sameRepresentation ty (LLVM.typeOf arg) = bitcastAndTag arg ty
 asArg ty arg | Ptr ty == LLVM.typeOf arg = load arg
 asArg ty arg | sameRepresentation (Ptr ty) (LLVM.typeOf arg) = bitcast arg (Ptr ty) >>= load
 asArg ty arg | sameRepresentation ty (Ptr $ LLVM.typeOf arg) = do
-  ptr <- heapAllocN 8 -- TODO: use size of type
+  bytes <- sizeOf size (LLVM.typeOf arg)
+  ptr <- heapAlloc bytes
   box <- bitcast ptr (Ptr $ LLVM.typeOf arg)
   store arg box
   if LLVM.typeOf ptr == ty
@@ -162,7 +174,10 @@ asArg ty arg | sameRepresentation ty (Ptr $ LLVM.typeOf arg) = do
 asArg ty arg = error $ "Cannot apply expression of type " ++ show (LLVM.typeOf arg) ++ " as argument of type " ++ show ty
 
 bitcastAndTag :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
-bitcastAndTag expr = bitcast $ tagFunction expr
+bitcastAndTag expr ty | ty == box = case LLVM.typeOf expr of
+  Ptr (LLVM.Function _ args) -> buildClosure (length args) expr []
+  _ -> bitcast expr ty
+bitcastAndTag expr ty = bitcast expr ty
 
 bitcastFunctionRef :: LLVM.Expression -> LLVM.Expression
 bitcastFunctionRef a@(LLVM.GlobalReference _ LLVM.Function{}) = ConstConvert LLVM.Bitcast a box
@@ -184,6 +199,7 @@ literal (IR.FloatLiteral n) = f64 n
 llvmType :: IR.Type -> LLVM.Type
 llvmType Integer = LLVM.I 32
 llvmType Float = LLVM.F64
+llvmType (Boxed _) = box
 llvmType Bound{} = box
 llvmType Free{} = error "Free variable left for code-generator!"
 llvmType (ADT _) = LLVM.I 32

@@ -14,9 +14,9 @@ data Global = VariableDefinition Name Linkage Expression
             | FunctionDeclaration Name (Parameter Type) [Type] FunctionAttributes
   deriving (Eq)
 
-data Parameter a = Parameter { parameter :: a, nonnull, noalias :: Bool } deriving (Eq)
+data Parameter a = Parameter { parameter :: a, nonnull, noalias :: Bool, align :: Maybe Int } deriving (Eq)
 
-data FunctionAttributes = FunctionAttributes { allocsize :: Maybe Int } deriving (Eq)
+newtype FunctionAttributes = FunctionAttributes { allocsize :: Maybe Int } deriving (Eq)
 
 data BasicBlock = BasicBlock (Maybe Name) [Statement] Terminator deriving (Eq)
 
@@ -31,6 +31,7 @@ data Assignment = Call Expression [Expression]
                 | Convert ConversionOp Expression Type
                 | BinaryOp BinaryOp Expression Expression
                 | Phi [(Expression, Name)]
+                | Alloca Type Expression
   deriving (Eq)
 
 data Terminator = Return Expression
@@ -94,9 +95,7 @@ instance References Assignment where
   expressions f (Convert op arg ty) = Convert op <$> f arg <*> pure ty
   expressions f (BinaryOp op a b) = BinaryOp op <$> f a <*> f b
   expressions f (Phi preds) = Phi <$> traverse (traverseOf _1 f) preds
-
--- replaceholder :: Name -> Name -> Statement -> Statement
--- replaceholder f
+  expressions f (Alloca ty n) = Alloca ty <$> f n
 
 -- * Show instances
 
@@ -124,6 +123,7 @@ instance Show a => Show (Parameter a) where
   show a =
     (if nonnull a then "nonnull " else "") ++
     (if noalias a then "noalias " else "") ++
+    maybe "" (\a -> "align " ++ show a ++ " ") (align a) ++
     show (parameter a)
 
 instance Show FunctionAttributes where
@@ -148,6 +148,7 @@ instance Show Assignment where
   show (BinaryOp op a b) = show op ++ " " ++ withType a ++ ", " ++ show b
   show phi@(Phi preds) = "phi " ++ show (typeOf phi) ++ " " ++ intercalate ", " (map showPred preds) where
     showPred (value, label) = "[" ++ show value ++ ", " ++ local label ++ "]"
+  show (Alloca ty n) = "alloca " ++ show ty ++ ", " ++ withType n ++ ", align 16"
 
 instance Show Terminator where
   show (Return expr) = "ret " ++ withType expr
@@ -281,14 +282,19 @@ instance Typed Assignment where
       Custom _ ty -> dereference ty index
       Ptr ty -> ty
       Array _ ty -> ty
-      Struct tys -> tys !! case index of
-        Literal (IntegerLiteral _ _ a) -> fromInteger a
-        Literal a -> error $ "cannot use non-integral type as an index: " ++ show (typeOf a)
-        _ -> error "cannot use a non-constant expression to index into a structure type"
+      Packed tys -> derefStruct tys
+      Struct tys -> derefStruct tys
       _ -> error $ "cannot getelementptr of non-aggregate value type: " ++ show ty
+      where
+        derefStruct tys = tys !! case index of
+          Literal (IntegerLiteral _ _ a) | fromInteger a < length tys -> fromInteger a
+          Literal (IntegerLiteral _ _ a) -> error $ "getelementptr index " ++ show a ++ " is out-of-bounds for " ++ show ty
+          Literal a -> error $ "cannot use non-integral type as an index: " ++ show (typeOf a)
+          _ -> error "cannot use a non-constant expression to index into a structure type"
   typeOf (Convert _ _ ty) = ty
   typeOf (BinaryOp op a _) = opType op $ typeOf a
   typeOf (Phi ((a,_):_)) = typeOf a
+  typeOf (Alloca ty _) = Ptr ty
 
 instance Typed Terminator where
   typeOf (Return expr) = typeOf expr
@@ -352,6 +358,14 @@ sameRepresentation (Custom _ a) b | sameRepresentation a b = True
 sameRepresentation a (Custom _ b) | sameRepresentation a b = True
 sameRepresentation (Ptr _) (Ptr _) = True
 sameRepresentation _ _ = False
+
+typeSize :: Type -> Int
+typeSize (I n) = n
+typeSize F64 = 64
+typeSize (Custom _ ty) = typeSize ty
+typeSize (Array n ty) = n * typeSize ty
+typeSize (Vector n ty) = n * typeSize ty
+typeSize ty = error $ "Type " ++ show ty ++ " isn't a primitive type!" -- TODO
 
 
 -- * Misc

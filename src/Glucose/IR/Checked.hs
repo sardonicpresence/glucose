@@ -74,10 +74,15 @@ bindTypes :: Monad m => m Identifier -> Expression -> m Expression
 bindTypes newVar = remapTypes newVar free bound
 
 bindType :: Identifier -> Type -> Expression -> Expression
-bindType name = set $ types . filtered (== Free name)
+bindType name = set (types . filtered (== Free name)) . boxed
 
 rebindType :: Identifier -> Type -> Expression -> Expression
-rebindType name = set $ types . filtered (== Bound name)
+rebindType name = set (types . filtered (== Bound name)) . boxed
+
+boxed :: Type -> Type
+boxed Integer = Boxed Integer
+boxed Float = Boxed Float
+boxed a = a
 
 captures :: Expression -> Set.Set Arg
 captures (Reference Local name _ ty) = Set.singleton $ Arg name ty
