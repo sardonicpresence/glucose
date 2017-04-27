@@ -20,7 +20,7 @@ data PartialLexeme
   = StartOfLine
   | Indentation
   | Gap
-  | Lambda
+  | Token Token
   | PartialIdentifier String -- reversed
   | PartialOperator String -- reversed
   | NumericLiteral NumericLiteral
@@ -73,7 +73,9 @@ maybeAppend c (NumericLiteral lit) = do
 maybeAppend _ _ = pure Nothing
 
 startingWith :: Error m => Char -> Lex m PartialLexeme
-startingWith '\\' = pure Lambda
+startingWith '\\' = pure $ Token BeginLambda
+startingWith '(' = pure $ Token OpenParen
+startingWith ')' = pure $ Token CloseParen
 startingWith c | isNewline c = pure StartOfLine
 startingWith c | isSpace c || isControl c = pure Gap
 startingWith c | isDigit c = pure $ NumericLiteral $ numericLiteral (digitToInt c)
@@ -89,10 +91,11 @@ completeLexeme nextChar = gets partial >>= \case
     when indentedDefinition $ unexpected "indentation" "before first definition"
     tellLexeme nextChar Nothing
   Gap -> tellLexeme nextChar Nothing
-  Lambda -> tellLexeme nextChar $ Just BeginLambda
+  Token token -> tellLexeme nextChar $ Just token
   PartialIdentifier "epyt" -> tellLexeme nextChar $ Just $ Keyword Type
   PartialIdentifier s -> tellLexeme nextChar $ Just $ Identifier $ pack $ reverse s
   PartialOperator "=" -> tellLexeme nextChar $ Just $ Operator Assign
+  PartialOperator ":" -> tellLexeme nextChar $ Just $ Operator Colon
   PartialOperator "|" -> tellLexeme nextChar $ Just $ Operator Bar
   PartialOperator ">-" -> tellLexeme nextChar $ Just $ Operator Arrow
   PartialOperator cs -> tellLexeme nextChar $ Just $ Operator $ CustomOperator (pack $ reverse cs)

@@ -20,6 +20,10 @@ Bar =
 three = \a -> 3
 id = \a -> a
 _const = \ a b -> a
+
+ofType : a -> a -> a
+ofType = _const
+
 test = \a -> _test
 test2 = \a -> _const id a
 test4 = \a b -> _const _const a test2 b

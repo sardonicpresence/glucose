@@ -17,6 +17,7 @@ instance Show Keyword where
 
 data Operator
   = Assign
+  | Colon
   | Arrow
   | Bar
   | CustomOperator Text
@@ -24,6 +25,7 @@ data Operator
 
 instance Show Operator where
   show Assign = "="
+  show Colon = ":"
   show Arrow = "->"
   show Bar = "|"
   show (CustomOperator s) = unpack s
@@ -34,6 +36,8 @@ data Token
   | Identifier Text
   | Keyword Keyword
   | Operator Operator
+  | OpenParen
+  | CloseParen
   | IntegerLiteral Integer
   | FloatLiteral Rational
   deriving (Eq, Ord, Show)
@@ -46,7 +50,7 @@ instance Arbitrary Operator where
     [ pure Assign
     , pure Arrow
     , pure Bar
-    , CustomOperator . pack <$> (listOf1 (arbitrary `suchThat` isOperator) `suchThat` (not . flip elem ["=", "->", "|"])) ]
+    , CustomOperator . pack <$> (listOf1 (arbitrary `suchThat` isOperator) `suchThat` (not . flip elem ["=", ":", "->", "|"])) ]
 
 instance Arbitrary Token where
   arbitrary = oneof
@@ -55,6 +59,8 @@ instance Arbitrary Token where
     , Identifier . identify <$> arbitrary
     , Keyword <$> arbitrary
     , Operator <$> arbitrary
+    , pure OpenParen
+    , pure CloseParen
     , IntegerLiteral <$> arbitrary `suchThat` (>=0)
     , FloatLiteral <$> do
         base <- arbitrary `suchThat` (>=0)
@@ -67,6 +73,12 @@ _endOfDefinition = prism' (const EndOfDefinition) $ \case EndOfDefinition -> Jus
 
 _beginLambda :: Prism' Token ()
 _beginLambda = prism' (const BeginLambda) $ \case BeginLambda -> Just (); _ -> Nothing
+
+_openParen :: Prism' Token ()
+_openParen = prism' (const OpenParen) $ \case OpenParen -> Just (); _ -> Nothing
+
+_closeParen :: Prism' Token ()
+_closeParen = prism' (const CloseParen) $ \case CloseParen -> Just (); _ -> Nothing
 
 _identifier :: Prism' Token Text
 _identifier = prism' Identifier $ \case Identifier a -> Just a; _ -> Nothing

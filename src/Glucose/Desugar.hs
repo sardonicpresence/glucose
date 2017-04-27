@@ -15,7 +15,7 @@ desugar (AST.Module defs) = IR.Module . concat <$> traverse definition defs
 
 definition :: Error m => FromSource AST.Definition -> m [Desugared IR.Definition]
 definition def = case extract def of
-  AST.Definition name expr -> pure . (def $>) . IR.Definition name <$> traverse expression expr
+  AST.Definition name expr _ -> pure . (def $>) . IR.Definition name <$> traverse expression expr
   AST.TypeDefinition name ctors -> zipWithM (constructor name) [0..] ctors
 
 constructor :: Error m => FromSource Identifier -> Int -> FromSource Identifier -> m (Desugared IR.Definition)

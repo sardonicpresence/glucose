@@ -3,6 +3,8 @@ module Glucose.Parser where
 import Control.Applicative hiding ((<**>))
 import Control.Comonad
 import Control.Lens hiding (traverse1)
+import Control.Monad
+import Data.Maybe
 import Data.Monoid
 
 import Glucose.AST as AST
@@ -37,10 +39,29 @@ parse :: (MonadThrow (ParseError Location (FromSource Token)) m) => Location -> 
 parse eofLocation = runParser parser (maybeEOF eofLocation startLocation) where
   parser = Module <$> many ((definition <|> typeDefinition) <* endOfDefinition) <* eof
 
+maybeApply :: (Applicative f, Comonad f) => f (Maybe (f a) -> b) -> Maybe (f a) -> f b
+maybeApply f Nothing = ($ Nothing) <$> f
+maybeApply f (Just a) = f <*> (Just <$> duplicate a)
+
 definition :: Parse AST.Definition
-definition = AST.Definition <$$> name <**> expr where
-  name = duplicate <$> identifier <* operator Assign
-  expr = duplicate <$> expression
+definition = do
+  name <- identifier
+  ann <- optional $ typeAnnotation <* endOfDefinition
+  let handle = const . error $ "Type annotation for " <> show (extract name) <> " not immediately followed by definition"
+  when (isJust ann) $ do
+    name' <- identifier
+    unless (extract name == extract name') . error $ "Type annotation for " <> show (extract name) <> " not immediately followed by definition"
+  expr <- operator Assign *> expression
+  pure $ (AST.Definition <$> duplicate name <*> duplicate expr) `maybeApply` ann
+
+typeAnnotation :: Parse Type
+typeAnnotation = operator Colon *> typeR
+
+typeNR :: Parse AST.Type
+typeNR = inParens typeR <|> Bound <$$> identifier -- TODO: other types
+
+typeR :: Parse AST.Type
+typeR = Function <$$> typeNR <* operator Arrow <**> typeR <|> typeNR
 
 typeDefinition :: Parse AST.Definition
 typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors where
@@ -80,7 +101,16 @@ literal = lexeme "literal" . traverse $ \t -> integerLiteral t <|> floatLiteral 
   floatLiteral = AST.FloatLiteral . fromRational <$$> preview _floatLiteral
 
 beginLambda :: Parse ()
-beginLambda = lexeme "lambda" (traverse $ is _beginLambda)
+beginLambda = lexeme "lambda" . traverse $ is _beginLambda
+
+inParens :: Parse a -> Parse a
+inParens p = openParen *> p <* closeParen
+
+openParen :: Parse ()
+openParen = lexeme "open parenthesis" . traverse $ is _openParen
+
+closeParen :: Parse ()
+closeParen = lexeme "close parenthesis" . traverse $ is _closeParen
 
 is :: Getting (First ()) s a -> s -> Maybe ()
 is a = preview $ a . like ()

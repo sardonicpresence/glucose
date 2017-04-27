@@ -5,14 +5,14 @@ import Data.Text
 import Glucose.Identifier
 import Glucose.Parser.Source
 
-data Module = Module [FromSource Definition] deriving (Eq, Show)
+newtype Module = Module [FromSource Definition] deriving (Eq, Show)
 
-data Definition = Definition (FromSource Identifier) (FromSource Expression)
+data Definition = Definition (FromSource Identifier) (FromSource Expression) (Maybe (FromSource Type)) 
                 | TypeDefinition (FromSource Identifier) [FromSource Identifier]
   deriving (Eq, Show)
 
 instance Bound Definition where
-  identifier (Definition name _) = extract name
+  identifier (Definition name _ _) = extract name
   identifier (TypeDefinition name _) = extract name
 
 data Value
@@ -27,6 +27,16 @@ data Expression
   deriving (Eq, Show)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq, Show)
+
+data Type = Integer | Float | ADT Identifier | Function Type Type | Bound Identifier deriving (Eq)
+
+instance Show Type where
+  show Integer = "int"
+  show Float = "float"
+  show (ADT name) = show name
+  show (Function a@Function{} b) = "(" ++ show a ++ ")->" ++ show b
+  show (Function a b) = show a ++ "->" ++ show b
+  show (Bound name) = show name
 
 integerLiteral :: Int -> Value
 integerLiteral = Literal . IntegerLiteral
