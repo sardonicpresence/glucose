@@ -35,8 +35,8 @@ flattenApply f a = go f [a] where
     Constructor _ _ -> error "Cannot supply arguments to a constructor"
     Literal _ -> error "Cannot supply arguments to a literal!" -- TODO: improve & move
   -- apply :: Type -> [Expression] -> ([[Expression]], Maybe [Expression])
-  apply (Function (Arity n m) _ b) applied (a:as) | n == m+1 = apply b [] as & _1 %~ (reverse (a:applied) :)
-  apply (Function (Arity _ _) _ b) applied (a:as) = apply b (a:applied) as
+  apply (Function (Arity 1) _ b) applied (a:as) = apply b [] as & _1 %~ (reverse (a:applied) :)
+  apply (Function (Arity _) _ b) applied (a:as) = apply b (a:applied) as
   apply _ [] [] = ([], Nothing)
   apply b applied [] = ([], Just . Partial b $ reverse applied)
   apply _ _ _ = error "Cannot supply arguments to a non-function!" -- TODO: improve & move

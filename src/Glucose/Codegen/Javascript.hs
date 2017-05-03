@@ -10,7 +10,7 @@ import Glucose.Identifier
 import Glucose.IR.Checked
 import Glucose.VarGen
 
-data JSRaw = JSRaw Text
+newtype JSRaw = JSRaw Text
 instance Show JSRaw where
   show (JSRaw s) = unpack s
 
@@ -88,7 +88,7 @@ typeDefinition :: Identifier -> Text
 typeDefinition (Identifier typeName) = typeName <> " = function() {}\n"
 
 arity :: Type -> Int
-arity (Function (Arity n m) _ _) = n - m
+arity (Function (Arity n) _ _) = n
 arity _ = 0
 
 -- TODO: need to build lambdas to coerce function arguments to the expected arity

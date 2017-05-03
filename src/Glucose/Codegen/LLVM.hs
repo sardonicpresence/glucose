@@ -204,8 +204,8 @@ llvmType Bound{} = box
 llvmType Free{} = error "Free variable left for code-generator!"
 llvmType (ADT _) = LLVM.I 32
 llvmType (IR.Function UnknownArity _ _) = fn
-llvmType (IR.Function (Arity n m) (varType . llvmType -> from) (llvmType -> to)) = case to of
-  LLVM.Function f as -> if n == m + 1
+llvmType (IR.Function (Arity n) (varType . llvmType -> from) (llvmType -> to)) = case to of
+  LLVM.Function f as -> if n == 1
     then LLVM.Function box [from]
     else LLVM.Function f (from : as)
   f -> LLVM.Function f [from]

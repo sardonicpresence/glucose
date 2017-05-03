@@ -81,9 +81,9 @@ instance Annotations ann => Typed (Expression ann) ann where
   typeOf (Literal a) = typeOf a
   typeOf (Reference _ _ _ ty) = ty
   typeOf (Constructor typeName _) = mkADT (extract typeName)
-  typeOf (Lambda args expr) = go 0 args where
+  typeOf (Lambda args expr) = go n args where
     go _ [] = typeOf $ extract expr
-    go m (a:as) = funType (Arity n m) (typeOf $ extract a) $ go (m+1) as
+    go m (a:as) = funType (Arity m) (typeOf $ extract a) $ go (m-1) as
     n = length args
   typeOf (Apply f _) = returnType (typeOf f)
 
@@ -147,7 +147,7 @@ instance Annotations Checked where
   a `withRefKind` Local = "%" ++ a
   a `withRefKind` Global = "@" ++ a
 
-data Arity = UnknownArity | Arity Int Int deriving (Eq, Ord)
+data Arity = UnknownArity | Arity Int deriving (Eq, Ord)
 
 instance Show Arity where
   show _ = "->"
