@@ -24,6 +24,8 @@ showToken input t = let s = showSource t input in case t ^. _fromSource of
   Identifier _ -> "identifier '" <> s <> "'"
   Keyword _ -> "keyword '" <> s <> "'"
   Operator _ -> "operator '" <> s <> "'"
+  OpenParen -> "("
+  CloseParen -> ")"
   IntegerLiteral _ -> "integer literal '" <> s <> "'"
   FloatLiteral _ -> "fractional literal '" <> s <> "'"
 

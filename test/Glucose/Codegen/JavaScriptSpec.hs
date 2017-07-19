@@ -12,7 +12,7 @@ import Glucose.Test.IR.Checked
 spec :: Spec
 spec = describe "JavaScript codegen" $ do
   it "compiles an empty module" $
-    codegen (Module []) `shouldShow` ""
+    codegenModule (Module []) `shouldShow` ""
   it "compiles global numeric constant definitions correctly" $
     codegenDefinitions [constantAnywhere "a" $ IR.IntegerLiteral 123,
                         constantAnywhere "b" $ IR.FloatLiteral 3.21] `shouldShow`

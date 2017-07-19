@@ -1,30 +1,15 @@
-module Glucose.Compiler (CompilerOutput(..), compile, compileDefinitions) where
+module Glucose.Compiler where
 
-import Control.Comonad
-import Data.Bifunctor
-import Data.Text (Text, pack)
+import Data.Bifunctor (first)
+import Data.Text (Text, unpack)
 import Glucose.Desugar
 import Glucose.Error
 import Glucose.IR
 import Glucose.Lexer
 import Glucose.Parser
 import Glucose.TypeChecker
-import qualified Glucose.Codegen.JavaScript as JS
-import qualified Glucose.Codegen.LLVM as LLVM
 
-data CompilerOutput = LLVM | JavaScript
-
--- | Compiles a single glucose source file into LLVM IR.
-compile :: CompilerOutput -> Text -> Either Text Text
-compile output source = format $ pure . pack . codegen =<< typeCheck =<< desugar =<< uncurry parse =<< tokenise source
-  where format = bimap (formatError source) id
-        codegen = case output of
-          LLVM -> show . LLVM.codegen
-          JavaScript -> show . JS.codegen
-
-compileDefinitions :: CompilerOutput -> Text -> Either Text Text
-compileDefinitions output source = format $ pure . pack . codegen =<< typeCheck =<< desugar =<< uncurry parse =<< tokenise source
-  where format = bimap (formatError source) id
-        codegen (Module defs) = case output of
-          LLVM -> concatMap show . LLVM.codegenDefinitions $ map extract defs
-          JavaScript -> show . JS.codegenDefinitions $ map extract defs
+-- | Compiles a single glucose source file with the given code-generator.
+compile :: (Module Checked -> a) -> Text -> Either String a
+compile codegen source = format $ pure . codegen =<< typeCheck =<< desugar =<< uncurry parse =<< tokenise source
+  where format = first (unpack . formatError source)

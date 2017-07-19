@@ -1,4 +1,4 @@
-module Glucose.Codegen.JavaScript (JSRaw, codegen, codegenDefinitions) where
+module Glucose.Codegen.JavaScript (JSRaw, codegen, codegenModuleDefinitions, codegenModule, codegenDefinitions) where
 
 import Control.Comonad
 import Control.Lens
@@ -19,8 +19,14 @@ type Codegen = RWS () Text (Set Identifier, Set Identifier)
 execCodegen :: Set Identifier -> Codegen a -> JSRaw
 execCodegen vars m = JSRaw . snd $ evalRWS m () (empty, vars)
 
-codegen :: Module -> JSRaw
-codegen (Module defs) = codegenDefinitions $ map extract defs
+codegen :: Module -> Text
+codegen = pack . show . codegenModule
+
+codegenModule :: Module -> JSRaw
+codegenModule (Module defs) = codegenDefinitions $ map extract defs
+
+codegenModuleDefinitions :: Module -> Text
+codegenModuleDefinitions = codegen
 
 codegenDefinitions :: [Definition] -> JSRaw
 codegenDefinitions defs = execCodegen vars $ mapAttemptM_ attemptToDefine defs where

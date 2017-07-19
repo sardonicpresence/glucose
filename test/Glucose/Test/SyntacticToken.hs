@@ -73,6 +73,8 @@ arbitraryRepresentation BeginLambda = pure "\\"
 arbitraryRepresentation (Identifier a) = pure a
 arbitraryRepresentation (Keyword keyword) = pure . pack $ show keyword
 arbitraryRepresentation (Operator op) = pure . pack $ show op
+arbitraryRepresentation OpenParen = pure "("
+arbitraryRepresentation CloseParen = pure ")"
 arbitraryRepresentation (IntegerLiteral a) = do
   e <- choose (0, maxExponent a)
   let ePart = if e == 0 then "" else "e" ++ show e

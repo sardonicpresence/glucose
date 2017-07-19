@@ -1,13 +1,8 @@
 module Glucose.Version where
 
-version :: String
+app = "glucose"
 version = "0.0.6"
-
-copyrightYear :: Int
-copyrightYear = 2017
-
-copyright :: String
+copyrightYear = 2017 :: Int
 copyright = "Copyright (C) " ++ show copyrightYear ++ " " ++ author
-
-author :: String
 author = "Neil Vice"
+tagline = "Experimental compiler for the trivial glucose language"

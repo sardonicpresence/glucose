@@ -15,7 +15,7 @@ import LLVM.Name
 spec :: Spec
 spec = describe "LLVM codegen" $ do
   it "compiles an empty module" $
-    codegen (IR.Module []) `shouldBe` LLVM.Module win64 []
+    codegenModule (IR.Module []) `shouldBe` LLVM.Module win64 []
   it "compiles global numeric constant definitions correctly" $
     codegenDefinitions [constantAnywhere "a" $ IR.IntegerLiteral 123,
                         constantAnywhere "b" $ IR.FloatLiteral 3.21] `shouldBe`
@@ -23,7 +23,7 @@ spec = describe "LLVM codegen" $ do
        LLVM.VariableDefinition (Name "b") LLVM.External (f64 3.21)]
   it "compiles global aliases correctly" $
     codegenDefinitions [aliasAnywhere "a" "b" Integer] `shouldBe`
-      [LLVM.Alias (Name "a") (Name "b") (LLVM.I 32)]
+      [LLVM.Alias (Name "a") (GlobalReference (Name "b") (LLVM.I 32)) (LLVM.I 32)]
   it "compiles enum constructors correctly" $
     codegenDefinitions [constructorAnywhere "test" "a" 0, constructorAnywhere "test" "B" 1] `shouldBe`
       [LLVM.VariableDefinition (Name "a") LLVM.External (i32 0),

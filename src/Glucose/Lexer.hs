@@ -16,6 +16,19 @@ import Glucose.Lexer.SyntacticToken
 import Glucose.Parser.Source
 import Glucose.Token
 
+tokens :: Text -> Either CompileError [Token]
+tokens = (map token . snd <$>) . tokenize
+
+tokenise :: Error m => Text -> m (Location, [FromSource Token])
+tokenise input = (_2 %~ mapMaybe fromLexeme) <$> _tokenize input
+
+tokenize :: Text -> Either CompileError (Location, [SyntacticToken])
+tokenize input = (_2 %~ fromLexemes) <$> _tokenize input where
+  fromLexemes as = mapMaybe (uncurry $ syntacticToken input) $ zip (Lexeme Nothing beginning 0 : as) as
+
+_tokenize :: Error m => Text -> m (Location, [Lexeme])
+_tokenize = runLexer . traverse_ consume . unpack
+
 data PartialLexeme
   = StartOfLine
   | Indentation
@@ -34,19 +47,6 @@ _partial :: Lens Lexer Lexer PartialLexeme PartialLexeme
 _partial = lens partial (\lexer partial' -> lexer {partial = partial'})
 
 type Lex m a = RWST () [Lexeme] Lexer m a
-
-tokens :: Text -> Either CompileError [Token]
-tokens = (map token . snd <$>) . tokenize
-
-tokenise :: Error m => Text -> m (Location, [FromSource Token])
-tokenise input = (_2 %~ mapMaybe fromLexeme) <$> _tokenize input
-
-tokenize :: Text -> Either CompileError (Location, [SyntacticToken])
-tokenize input = (_2 %~ go) <$> _tokenize input where
-  go as = mapMaybe (uncurry $ syntacticToken input) $ zip (Lexeme Nothing beginning 0 : as) as
-
-_tokenize :: Error m => Text -> m (Location, [Lexeme])
-_tokenize = runLexer . traverse_ consume . unpack
 
 runLexer :: Error m => Lex m () -> m (Location, [Lexeme])
 runLexer l = (_1 %~ pos) <$> execRWST (l *> completeLexeme Nothing) () (Lexer StartOfLine beginning beginning False)
