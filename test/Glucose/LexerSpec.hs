@@ -36,11 +36,11 @@ spec = do
     itParsesIntegerLiterals
     itParsesFractionalLiterals
     itCorrectlyParsesInfixApplication
-  describe "tokenize" $
+  describe "tokeniseReversible" $
     it "is reversable" $ property $ \(SyntacticTokens tokens) (WhiteSpace ws) ->
-      let source = detokenize ws tokens
+      let source = detokenise ws tokens
           eofLocation = Text.foldl (flip updateLocation) beginning source
-       in tokenize source === Right (eofLocation, tokens)
+       in tokeniseReversible source === Right (eofLocation, tokens)
 
 itParsesKeywords :: SpecWith ()
 itParsesKeywords = describe "correctly parses keywords" $

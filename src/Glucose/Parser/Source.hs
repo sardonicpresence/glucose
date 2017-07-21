@@ -7,6 +7,7 @@ import Data.Text as Text
 import Glucose.Identifier
 import Glucose.Lexer.Location
 
+-- | An inclusive range of characters in a UTF8 stream.
 data SourceRange = SourceRange Location Location deriving (Eq, Ord)
 
 instance Show SourceRange where
@@ -22,6 +23,7 @@ instance Read SourceRange where
 instance Semigroup SourceRange where
   SourceRange a b <> SourceRange c d = SourceRange (min a c) (max b d)
 
+-- | Functor associating a value with a range of chracters.
 data FromSource a = FromSource SourceRange a deriving (Eq, Ord, Functor)
 
 instance Show a => Show (FromSource a) where

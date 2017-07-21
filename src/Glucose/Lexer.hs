@@ -1,5 +1,6 @@
-module Glucose.Lexer (tokens, tokenise, tokenize) where
+module Glucose.Lexer (tokens, tokenise, tokeniseReversible) where
 
+import Control.Comonad
 import Control.Lens
 import Control.Monad.RWS
 import Data.Char
@@ -16,18 +17,21 @@ import Glucose.Lexer.SyntacticToken
 import Glucose.Parser.Source
 import Glucose.Token
 
+-- | The output of the lexer with the location of the end of the input.
+type Tokenised a = (Location, a)
+
 tokens :: Text -> Either CompileError [Token]
-tokens = (map token . snd <$>) . tokenize
+tokens input = map extract . extract <$> tokenise input
 
-tokenise :: Error m => Text -> m (Location, [FromSource Token])
-tokenise input = (_2 %~ mapMaybe fromLexeme) <$> _tokenize input
+tokenise :: Error m => Text -> m (Tokenised [FromSource Token])
+tokenise input = fmap (mapMaybe fromLexeme) <$> lexemes input
 
-tokenize :: Text -> Either CompileError (Location, [SyntacticToken])
-tokenize input = (_2 %~ fromLexemes) <$> _tokenize input where
+tokeniseReversible :: Text -> Either CompileError (Tokenised [SyntacticToken])
+tokeniseReversible input = fmap fromLexemes <$> lexemes input where
   fromLexemes as = mapMaybe (uncurry $ syntacticToken input) $ zip (Lexeme Nothing beginning 0 : as) as
 
-_tokenize :: Error m => Text -> m (Location, [Lexeme])
-_tokenize = runLexer . traverse_ consume . unpack
+lexemes :: Error m => Text -> m (Tokenised [Lexeme])
+lexemes = runLexer . traverse_ consume . unpack
 
 data PartialLexeme
   = StartOfLine
@@ -40,6 +44,9 @@ data PartialLexeme
 
 data Lexer = Lexer { partial :: PartialLexeme, lexemeStart :: Location, pos :: Location, inDefinition :: Bool }
 
+initLexer :: Lexer
+initLexer = Lexer StartOfLine beginning beginning False
+
 _pos :: Lens Lexer Lexer Location Location
 _pos = lens pos (\lexer pos' -> lexer {pos = pos'})
 
@@ -48,8 +55,8 @@ _partial = lens partial (\lexer partial' -> lexer {partial = partial'})
 
 type Lex m a = RWST () [Lexeme] Lexer m a
 
-runLexer :: Error m => Lex m () -> m (Location, [Lexeme])
-runLexer l = (_1 %~ pos) <$> execRWST (l *> completeLexeme Nothing) () (Lexer StartOfLine beginning beginning False)
+runLexer :: Error m => Lex m () -> m (Tokenised [Lexeme])
+runLexer l = (_1 %~ pos) <$> execRWST (l *> completeLexeme Nothing) () initLexer
 
 consume :: Error m => Char -> Lex m ()
 consume c = consumeChar c *> (_pos %= updateLocation c)
