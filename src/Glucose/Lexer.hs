@@ -1,4 +1,4 @@
-module Glucose.Lexer (tokens, tokenise, tokeniseReversible) where
+module Glucose.Lexer (tokens, tokenise) where
 
 import Control.Comonad
 import Control.Lens
@@ -13,25 +13,18 @@ import qualified Glucose.Error as Error
 import Glucose.Lexer.Char
 import Glucose.Lexer.Location
 import Glucose.Lexer.NumericLiteral
-import Glucose.Lexer.SyntacticToken
 import Glucose.Parser.Source
 import Glucose.Token
 
--- | The output of the lexer with the location of the end of the input.
-type Tokenised a = (Location, a)
+type Tokenised = (Location, [FromSource Token])
 
 tokens :: Text -> Either CompileError [Token]
 tokens input = map extract . extract <$> tokenise input
 
-tokenise :: Error m => Text -> m (Tokenised [FromSource Token])
-tokenise input = fmap (mapMaybe fromLexeme) <$> lexemes input
-
-tokeniseReversible :: Text -> Either CompileError (Tokenised [SyntacticToken])
-tokeniseReversible input = fmap fromLexemes <$> lexemes input where
-  fromLexemes as = mapMaybe (uncurry $ syntacticToken input) $ zip (Lexeme Nothing beginning 0 : as) as
-
-lexemes :: Error m => Text -> m (Tokenised [Lexeme])
-lexemes = runLexer . traverse_ consume . unpack
+-- | Perform lexical analysis, splitting UTF8 text into tokens.
+-- Evaluates to a list of tokens, each associated with a range of characters, paired with the location of EOF.
+tokenise :: Error m => Text -> m Tokenised
+tokenise = runLexer . traverse_ consume . unpack
 
 data PartialLexeme
   = StartOfLine
@@ -41,6 +34,7 @@ data PartialLexeme
   | PartialIdentifier String -- reversed
   | PartialOperator String -- reversed
   | NumericLiteral NumericLiteral
+  | EOF
 
 data Lexer = Lexer { partial :: PartialLexeme, lexemeStart :: Location, pos :: Location, inDefinition :: Bool }
 
@@ -53,9 +47,9 @@ _pos = lens pos (\lexer pos' -> lexer {pos = pos'})
 _partial :: Lens Lexer Lexer PartialLexeme PartialLexeme
 _partial = lens partial (\lexer partial' -> lexer {partial = partial'})
 
-type Lex m a = RWST () [Lexeme] Lexer m a
+type Lex m a = RWST () [FromSource Token] Lexer m a
 
-runLexer :: Error m => Lex m () -> m (Tokenised [Lexeme])
+runLexer :: Error m => Lex m () -> m Tokenised
 runLexer l = (_1 %~ pos) <$> execRWST (l *> completeLexeme Nothing) () initLexer
 
 consume :: Error m => Char -> Lex m ()
@@ -92,47 +86,53 @@ startingWith c = unexpectedChar c "in input"
 
 completeLexeme :: Error m => Maybe Char -> Lex m ()
 completeLexeme nextChar = gets partial >>= \case
-  StartOfLine -> unless (isNothing nextChar) $ implicitEndOfDefinition *> tellLexeme nextChar Nothing
+  EOF -> error "Still lexing after eof!"
+  StartOfLine -> unless (isNothing nextChar) $ implicitEndOfDefinition *> nextLexeme nextChar
   Indentation -> do
     indentedDefinition <- ((isJust nextChar &&) . not) <$> gets inDefinition
     when indentedDefinition $ unexpected "indentation" "before first definition"
-    tellLexeme nextChar Nothing
-  Gap -> tellLexeme nextChar Nothing
-  Token token -> tellLexeme nextChar $ Just token
-  PartialIdentifier "epyt" -> tellLexeme nextChar $ Just $ Keyword Type
-  PartialIdentifier s -> tellLexeme nextChar $ Just $ Identifier $ pack $ reverse s
-  PartialOperator "=" -> tellLexeme nextChar $ Just $ Operator Assign
-  PartialOperator ":" -> tellLexeme nextChar $ Just $ Operator Colon
-  PartialOperator "|" -> tellLexeme nextChar $ Just $ Operator Bar
-  PartialOperator ">-" -> tellLexeme nextChar $ Just $ Operator Arrow
-  PartialOperator cs -> tellLexeme nextChar $ Just $ Operator $ CustomOperator (pack $ reverse cs)
+    nextLexeme nextChar
+  Gap -> nextLexeme nextChar
+  Token token -> tellLexeme nextChar token
+  PartialIdentifier "epyt" -> tellLexeme nextChar $ Keyword Type
+  PartialIdentifier s -> tellLexeme nextChar $ Identifier $ pack $ reverse s
+  PartialOperator "=" -> tellLexeme nextChar $ Operator Assign
+  PartialOperator ":" -> tellLexeme nextChar $ Operator Colon
+  PartialOperator "|" -> tellLexeme nextChar $ Operator Bar
+  PartialOperator ">-" -> tellLexeme nextChar $ Operator Arrow
+  PartialOperator cs -> tellLexeme nextChar $ Operator $ CustomOperator (pack $ reverse cs)
   NumericLiteral lit -> do
     (token, lastChar) <- toLex $ completeNumericLiteral lit
     case lastChar of
-      Nothing -> tellLexeme nextChar (Just token)
+      Nothing -> tellLexeme nextChar token
       Just lc -> do
         _pos %= rewind
         case nextChar of
           Nothing -> unexpectedChar lc "following numeric literal"
           Just nc -> do
-            tellLexeme lastChar (Just token)
+            tellLexeme lastChar token
             _pos %= updateLocation lc
             consumeChar nc
 
-toLex :: Error m => RWST () [Lexeme] Lexer (Either ErrorDetails) a -> Lex m a
+toLex :: Error m => RWST () [FromSource Token] Lexer (Either ErrorDetails) a -> Lex m a
 toLex m = gets pos >>= \loc -> mapRWST (locateError loc) m
 
 implicitEndOfDefinition :: Monad m => Lex m ()
 implicitEndOfDefinition = do
   start <- gets lexemeStart
-  when (start /= beginning) $ tell $ pure $ Lexeme (Just EndOfDefinition) start 0
+  when (start /= beginning) $ tell $ pure $ FromSource (SourceRange start start) EndOfDefinition
 
-tellLexeme :: Error m => Maybe Char -> Maybe Token -> Lex m ()
+nextLexeme :: Error m => Maybe Char -> Lex m ()
+nextLexeme nextChar =  do
+  pos <- gets pos
+  partial' <- maybe (pure EOF) startingWith nextChar
+  put $ Lexer partial' pos pos True
+
+tellLexeme :: Error m => Maybe Char -> Token -> Lex m ()
 tellLexeme nextChar token = do
   Lexer { lexemeStart, pos } <- get
-  tell . pure $ Lexeme token lexemeStart (codePointsBetween lexemeStart pos)
-  partial' <- maybe (pure undefined) startingWith nextChar
-  put $ Lexer partial' pos pos True
+  tell [FromSource (SourceRange lexemeStart pos) token]
+  nextLexeme nextChar
 
 
 -- * Error messages

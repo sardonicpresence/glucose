@@ -54,6 +54,9 @@ instance Bound a => Bound (FromSource a) where
 startLocation :: FromSource a -> Location
 startLocation (FromSource (SourceRange start _) _) = start
 
+endLocation :: FromSource a -> Location
+endLocation (FromSource (SourceRange _ end) _) = end
+
 _fromSource :: Lens' (FromSource a) a
 _fromSource = lens extract ($>)
 

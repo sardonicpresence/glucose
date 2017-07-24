@@ -7,6 +7,7 @@ module Glucose.Error
   locateError
 ) where
 
+import Control.Lens ((^.))
 import Control.Monad.Throw
 import Data.List
 import Data.Monoid
@@ -14,11 +15,10 @@ import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Glucose.Identifier
 import Glucose.Lexer.Location
-import Glucose.Lexer.SyntacticToken (showToken)
 import Glucose.Parser.EOFOr
 import Glucose.Parser.Monad (ParseError(ParseError))
 import Glucose.Parser.Source
-import Glucose.Token
+import Glucose.Token as Token
 
 data CompileError = CompileError Location ErrorDetails deriving (Eq, Show)
 
@@ -88,6 +88,18 @@ typeMismatch loc a b = throwError $ CompileError loc $ TypeMismatch (pack $ show
 
 showLocation :: Location -> Text
 showLocation loc = pack $ show (line loc) ++ ":" ++ show (column loc)
+
+showToken :: Text -> FromSource Token -> Text
+showToken input t = let s = showSource t input in case t ^. _fromSource of
+  EndOfDefinition -> (if Text.null s then "implicit" else "explicit") <> " end of definition"
+  BeginLambda -> "lambda '" <> s <> "'"
+  Token.Identifier _ -> "identifier '" <> s <> "'"
+  Keyword _ -> "keyword '" <> s <> "'"
+  Operator _ -> "operator '" <> s <> "'"
+  OpenParen -> "("
+  CloseParen -> ")"
+  IntegerLiteral _ -> "integer literal '" <> s <> "'"
+  FloatLiteral _ -> "fractional literal '" <> s <> "'"
 
 locateError :: MonadThrow CompileError m => Location -> Either ErrorDetails a -> m a
 locateError loc (Left e) = throwError $ CompileError loc e

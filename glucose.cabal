@@ -30,7 +30,7 @@ library
                      , Glucose.Lexer.Char
                      , Glucose.Lexer.Location
                      , Glucose.Lexer.NumericLiteral
-                     , Glucose.Lexer.SyntacticToken
+                     , Glucose.Lexer.Reversible
                      , Glucose.Parser
                      , Glucose.Parser.EOFOr
                      , Glucose.Parser.Monad
