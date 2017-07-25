@@ -6,9 +6,9 @@ import Data.Text as Text (pack, foldl)
 import Glucose.Error
 import Glucose.Lexer
 import Glucose.Lexer.Location
-import Glucose.Lexer.SyntacticToken hiding (token)
+import Glucose.Lexer.Reversible hiding (token)
 import Glucose.Test.Error
-import Glucose.Test.SyntacticToken
+import Glucose.Test.Lexer ()
 import Glucose.Token
 
 spec :: Spec
@@ -37,8 +37,8 @@ spec = do
     itParsesFractionalLiterals
     itCorrectlyParsesInfixApplication
   describe "tokeniseReversible" $
-    it "is reversable" $ property $ \(SyntacticTokens tokens) (WhiteSpace ws) ->
-      let source = detokenise ws tokens
+    it "is reversable" $ property $ \tokens ->
+      let source = detokenise tokens
           eofLocation = Text.foldl (flip updateLocation) beginning source
        in tokeniseReversible source === Right (eofLocation, tokens)
 

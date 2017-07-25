@@ -1,35 +1,31 @@
-module Glucose.Test.SyntacticToken where
+module Glucose.Test.Lexer where
 
 import Data.List as List
 import Data.Text as Text
 import Glucose.Lexer.Char
 import Glucose.Lexer.Location
-import Glucose.Lexer.SyntacticToken
+import Glucose.Lexer.Reversible
 import Glucose.Token
 import Numeric
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
-newtype SyntacticTokens = SyntacticTokens [SyntacticToken] deriving (Show)
-
-instance Arbitrary SyntacticTokens where
-  arbitrary = SyntacticTokens <$> arbitraryTokens `suchThat` (not . endsLastDefinition) where
+instance Arbitrary TokenisedReversible where
+  arbitrary = TokenisedReversible <$> arbitrary <*> arbitraryTokens `suchThat` (not . endsLastDefinition) where
     endsLastDefinition [] = True
     endsLastDefinition as = token (List.last as) == EndOfDefinition
 
-newtype WhiteSpace = WhiteSpace Text deriving (Show)
+instance Arbitrary Whitespace where
+  arbitrary = Whitespace <$> arbitraryWhitespace
 
-instance Arbitrary WhiteSpace where
-  arbitrary = WhiteSpace <$> arbitraryWhitespace
-
-arbitraryTokens :: Gen [SyntacticToken]
+arbitraryTokens :: Gen [ReversibleToken]
 arbitraryTokens = scale (`div` 10) . sized $ \n -> choose (0, n) >>= go Nothing where
   go _ 0 = pure []
   go prev n = do
     next <- arbitraryAfter prev
     (next :) <$> go (Just next) (n-1)
 
-arbitraryAfter :: Maybe SyntacticToken -> Gen SyntacticToken
+arbitraryAfter :: Maybe ReversibleToken -> Gen ReversibleToken
 arbitraryAfter prev = do
   let cantEndDefinition = maybe True (EndOfDefinition ==) $ token <$> prev
   newToken <- if cantEndDefinition then arbitrary `suchThat` (/= EndOfDefinition) else arbitrary
@@ -37,7 +33,7 @@ arbitraryAfter prev = do
   let preceeding = maybe whitespace (\p -> lexeme p `append` whitespace) prev
   let start = Text.foldl' (flip updateLocation) (maybe beginning location prev) preceeding
   newLexeme <- arbitraryRepresentation newToken
-  pure $ SyntacticToken newToken start newLexeme whitespace
+  pure $ ReversibleToken newToken start newLexeme whitespace
 
 arbitraryWhitespaceBetween :: Maybe Token -> Token -> Gen Text
 arbitraryWhitespaceBetween (Just EndOfDefinition) _ = arbitraryWhitespace `suchThat` endsDefinition

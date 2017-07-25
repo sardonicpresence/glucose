@@ -32,12 +32,8 @@ updateLocation _ (Location char line col) = Location (char+1) line (col+1)
 codePointsBetween :: Location -> Location -> Int
 codePointsBetween (Location start _ _) (Location end _ _) = end - start
 
--- | Advance a location by a single code-point & column.
-advance :: Location -> Int -> Location
-advance (Location cp line col) n = Location (cp + n) line (col + n)
-
--- | Retreat a location to the previous code-point & column.
--- It as an error to attempt to retreat past the beginning of a line.
+-- | Rewind a location to the previous code-point & column.
+-- It as an error to attempt to rewind past the beginning of a line.
 rewind :: Location -> Location
 rewind (Location _ _ 1) = error "Can't rewind a Location past a newline!"
 rewind (Location cp line col) = Location (cp-1) line (col-1)

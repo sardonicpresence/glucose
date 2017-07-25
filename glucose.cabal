@@ -95,19 +95,19 @@ test-suite glucose-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       Glucose.CompilerSpec
+                     , Glucose.LexerSpec
+                     , Glucose.ParserSpec
+                     , Glucose.DesugarSpec
+                     , Glucose.TypeCheckerSpec
                      , Glucose.Codegen.JavaScriptSpec
                      , Glucose.Codegen.LLVMSpec
-                     , Glucose.TypeCheckerSpec
-                     , Glucose.DesugarSpec
-                     , Glucose.ParserSpec
-                     , Glucose.LexerSpec
-                     , Glucose.Test.Source
-                     , Glucose.Test.SyntacticToken
                      , Glucose.Test.AST
                      , Glucose.Test.Error
                      , Glucose.Test.IR.Core
                      , Glucose.Test.IR.Checked
                      , Glucose.Test.IR.Unchecked
+                     , Glucose.Test.Lexer
+                     , Glucose.Test.Source
                      , Test.Utils
                      , Test.Prelude
   build-depends:       base

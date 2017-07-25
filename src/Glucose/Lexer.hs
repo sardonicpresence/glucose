@@ -45,7 +45,7 @@ _pos :: Lens Lexer Lexer Location Location
 _pos = lens pos (\lexer pos' -> lexer {pos = pos'})
 
 _partial :: Lens Lexer Lexer PartialLexeme PartialLexeme
-_partial = lens partial (\lexer partial' -> lexer {partial = partial'})
+_partial = lens partial (\lexer partial' -> lexer { partial = partial' })
 
 type Lex m a = RWST () [FromSource Token] Lexer m a
 
@@ -120,19 +120,21 @@ toLex m = gets pos >>= \loc -> mapRWST (locateError loc) m
 implicitEndOfDefinition :: Monad m => Lex m ()
 implicitEndOfDefinition = do
   start <- gets lexemeStart
-  when (start /= beginning) $ tell $ pure $ FromSource (SourceRange start start) EndOfDefinition
-
-nextLexeme :: Error m => Maybe Char -> Lex m ()
-nextLexeme nextChar =  do
-  pos <- gets pos
-  partial' <- maybe (pure EOF) startingWith nextChar
-  put $ Lexer partial' pos pos True
+  when (start /= beginning) $ tellToken start start EndOfDefinition
 
 tellLexeme :: Error m => Maybe Char -> Token -> Lex m ()
 tellLexeme nextChar token = do
   Lexer { lexemeStart, pos } <- get
-  tell [FromSource (SourceRange lexemeStart pos) token]
+  tellToken lexemeStart pos token
   nextLexeme nextChar
+
+tellToken :: Monad m => Location -> Location -> Token -> Lex m ()
+tellToken start after token = tell [FromSource (SourceRange start $ rewind after) token]
+
+nextLexeme :: Error m => Maybe Char -> Lex m ()
+nextLexeme nextChar =  do
+  partial' <- maybe (pure EOF) startingWith nextChar
+  modify $ \lexer -> lexer { partial = partial', lexemeStart = pos lexer, inDefinition = True }
 
 
 -- * Error messages
