@@ -15,13 +15,19 @@ import Glucose.Parser.EOFOr
 import Glucose.Parser.Monad
 import Glucose.Source
 
-type Parse a = Parser Location (FromSource Token) [FromSource Token] (FromSource a)
+type Parse f a = Parser Location (f Token) [f Token] a
+type ParseCompound f a = Parse f (f (a f))
+type ParseLexeme f a = Parse f (f a)
 
-parse :: (MonadThrow (ParseError Location (FromSource Token)) m) => Location -> [FromSource Token] -> m Module
-parse eofLocation = runParser parser (maybeEOF eofLocation startLocation) where
-  parser = Module <$> many ((definition <|> typeDefinition) <* endOfDefinition) <* eof
+type Source f = (Comonad f, Applicative f, Traversable f)
 
-definition :: Parse AST.Definition
+parse :: MonadThrow (ParseError Location (FromSource Token)) m => Location -> [FromSource Token] -> m (Module FromSource)
+parse eofLocation = runParser moduleParser (maybeEOF eofLocation startLocation)
+
+moduleParser :: Source f => Parse f (Module f)
+moduleParser = Module <$> many ((definition <|> typeDefinition) <* endOfDefinition) <* eof
+
+definition :: Source f => ParseCompound f AST.Definition
 definition = do
   name <- identifier
   ann <- optional $ typeAnnotation <* endOfDefinition
@@ -31,59 +37,59 @@ definition = do
   expr <- operator Assign *> expression
   pure $ (AST.Definition <$> duplicate name <*> duplicate expr) `maybeApply` ann
 
-typeAnnotation :: Parse Type
-typeAnnotation = operator Colon *> typeR
-
-typeNR :: Parse AST.Type
-typeNR = inParens typeR <|> Bound <$$> identifier -- TODO: other types
-
-typeR :: Parse AST.Type
-typeR = Function <$$> typeNR <* operator Arrow <**> typeR <|> typeNR
-
-typeDefinition :: Parse AST.Definition
+typeDefinition :: Source f => ParseCompound f AST.Definition
 typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors where
   name = duplicate <$> identifier <* operator Assign
   constructors = traverse1 duplicate <$> identifier `separatedBy` operator Bar
 
-expression :: Parse AST.Expression
+expression :: Source f => ParseCompound f AST.Expression
 expression = buildExpression <$> some value where
   buildExpression [expr] = AST.Value <$> expr
   buildExpression es = let (a:as) = reverse es in AST.Apply <$> duplicate (buildExpression $ reverse as) <*> duplicate a
 
-value :: Parse AST.Value
+value :: Source f => ParseCompound f AST.Value
 value = AST.Variable <$$> identifier
     <|> AST.Literal <$$> literal
     <|> toLambda <$> (beginLambda *> some identifier <* operator Arrow) <*> expression
   where
     toLambda a b = AST.Lambda <$> sequence1 (duplicate <$> a) <*> duplicate b
 
-endOfDefinition :: Parse ()
+typeAnnotation :: Source f => ParseLexeme f Type
+typeAnnotation = operator Colon *> typeR
+
+typeNR :: Source f => ParseLexeme f AST.Type
+typeNR = inParens typeR <|> Bound <$$> identifier -- TODO: other types
+
+typeR :: Source f => ParseLexeme f AST.Type
+typeR = Function <$$> typeNR <* operator Arrow <**> typeR <|> typeNR
+
+endOfDefinition :: Source f => ParseLexeme f ()
 endOfDefinition = (lexeme "end of definition" . traverse $ is _endOfDefinition) <|> pure <$> eof
 
-identifier :: Parse AST.Identifier
+identifier :: Traversable f => ParseLexeme f AST.Identifier
 identifier = lexeme "identifier" . traverse $ AST.Identifier <$$> preview _identifier
 
-keyword :: Keyword -> Parse ()
+keyword :: Traversable f => Keyword -> ParseLexeme f ()
 keyword kw = lexeme ("\"" ++ show kw ++ "\"") . traverse . is $ _keyword . filtered (kw ==)
 
-operator :: Operator -> Parse ()
+operator :: Traversable f => Operator -> ParseLexeme f ()
 operator op = lexeme ("\"" ++ show op ++ "\"") . traverse . is $ _operator . filtered (op ==)
 
-literal :: Parse Literal
+literal :: Traversable f => ParseLexeme f Literal
 literal = lexeme "literal" . traverse $ \t -> integerLiteral t <|> floatLiteral t where
   integerLiteral = AST.IntegerLiteral . fromInteger <$$> preview _integerLiteral
   floatLiteral = AST.FloatLiteral . fromRational <$$> preview _floatLiteral
 
-beginLambda :: Parse ()
+beginLambda :: Traversable f => ParseLexeme f ()
 beginLambda = lexeme "lambda" . traverse $ is _beginLambda
 
-inParens :: Parse a -> Parse a
+inParens :: Traversable f => ParseLexeme f a -> ParseLexeme f a
 inParens p = openParen *> p <* closeParen
 
-openParen :: Parse ()
+openParen :: Traversable f => ParseLexeme f ()
 openParen = lexeme "open parenthesis" . traverse $ is _openParen
 
-closeParen :: Parse ()
+closeParen :: Traversable f => ParseLexeme f ()
 closeParen = lexeme "close parenthesis" . traverse $ is _closeParen
 
 -- * Utilities

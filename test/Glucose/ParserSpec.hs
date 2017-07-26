@@ -16,7 +16,7 @@ import Glucose.Test.Error
 spec :: Spec
 spec = describe "parse" $ do
   it "parses no tokens to an empty module" $
-    parse beginning [] `shouldBe` (Right (AST.Module []) :: Either CompileError AST.Module)
+    parse beginning [] `shouldBe` (Right (AST.Module []) :: Either CompileError (AST.Module FromSource))
   it "errors on incomplete definition" $
     parseTokens "a=" `shouldErrorWith` unexpectedEof "1:3@2" ["identifier","literal","lambda"]
   it "parses global numeric literal definitions correctly" $
@@ -54,8 +54,8 @@ spec = describe "parse" $ do
     parseTokens "type a=" `shouldErrorWith` unexpectedEof "1:8@7" ["identifier"]
     parseTokens "type a=b|" `shouldErrorWith` unexpectedEof "1:10@9" ["identifier"]
 
-parseTokens :: Text -> Either CompileError AST.Module
+parseTokens :: Text -> Either CompileError (AST.Module FromSource)
 parseTokens = uncurry parse <=< tokenise
 
-shouldParseAs :: Either CompileError AST.Module -> [FromSource AST.Definition] -> Expectation
+shouldParseAs :: Either CompileError (AST.Module FromSource) -> [FromSource (AST.Definition FromSource)] -> Expectation
 a `shouldParseAs` defs = a `shouldBe` Right (AST.Module defs)

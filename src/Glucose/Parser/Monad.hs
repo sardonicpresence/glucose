@@ -69,7 +69,7 @@ runParser p fLocation ts = resolveOutcome $ fst <$> runStateT (runReaderT p fLoc
 parser :: (Ord l, Cons ts ts t t) => (Maybe (t, ts) -> Parser l t ts a) -> Parser l t ts a
 parser f = gets uncons >>= \p -> case p of
   Nothing -> f Nothing
-  Just (t, ts) -> put ts *> f p
+  Just (_, ts) -> put ts *> f p
 
 eof :: (Ord l, Cons ts ts t t) => Parser l t ts ()
 eof = parser $ \case

@@ -3,28 +3,36 @@ module Glucose.AST where
 import Control.Comonad
 import Data.Text
 import Glucose.Identifier
-import Glucose.Source
 
-newtype Module = Module [FromSource Definition] deriving (Eq, Show)
+newtype Module f = Module [f (Definition f)]
 
-data Definition = Definition (FromSource Identifier) (FromSource Expression) (Maybe (FromSource Type))
-                | TypeDefinition (FromSource Identifier) [FromSource Identifier]
-  deriving (Eq, Show)
+deriving instance Eq (f (Definition f)) => Eq (Module f)
+deriving instance Show (f (Definition f)) => Show (Module f)
 
-instance Bound Definition where
+data Definition f = Definition (f Identifier) (f (Expression f)) (Maybe (f Type))
+                  | TypeDefinition (f Identifier) [f Identifier]
+
+deriving instance (Eq (f (Expression f)), Eq (f Identifier), Eq (f Type)) => Eq (Definition f)
+deriving instance (Show (f (Expression f)), Show (f Identifier), Show (f Type)) => Show (Definition f)
+
+instance Comonad f => Bound (Definition f) where
   identifier (Definition name _ _) = extract name
   identifier (TypeDefinition name _) = extract name
 
-data Value
+data Value f
   = Literal Literal
   | Variable Identifier
-  | Lambda [FromSource Identifier] (FromSource Expression)
-  deriving (Eq, Show)
+  | Lambda [f Identifier] (f (Expression f))
 
-data Expression
-  = Value Value
-  | Apply (FromSource Expression) (FromSource Value)
-  deriving (Eq, Show)
+deriving instance (Eq (f (Expression f)), Eq (f Identifier)) => Eq (Value f)
+deriving instance (Show (f (Expression f)), Show (f Identifier)) => Show (Value f)
+
+data Expression f
+  = Value (Value f)
+  | Apply (f (Expression f)) (f (Value f))
+
+deriving instance (Eq (f (Expression f)), Eq (f (Value f)), Eq (Value f)) => Eq (Expression f)
+deriving instance (Show (f (Expression f)), Show (f (Value f)), Show (Value f)) => Show (Expression f)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq, Show)
 
@@ -38,11 +46,11 @@ instance Show Type where
   show (Function a b) = show a ++ "->" ++ show b
   show (Bound name) = show name
 
-integerLiteral :: Int -> Value
+integerLiteral :: Int -> Value f
 integerLiteral = Literal . IntegerLiteral
 
-floatLiteral :: Double -> Value
+floatLiteral :: Double -> Value f
 floatLiteral = Literal . FloatLiteral
 
-variable :: Text -> Value
+variable :: Text -> Value f
 variable = Variable . Identifier
