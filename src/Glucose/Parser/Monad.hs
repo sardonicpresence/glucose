@@ -54,22 +54,22 @@ instance Semigroup e => MonadPlus (Outcome e)
 instance Semigroup e => MonadThrow e (Outcome e) where
   throwError = Failure
 
-liftOutcome :: MonadThrow e m => Outcome e a -> m a
-liftOutcome (Success a) = pure a
-liftOutcome (Failure e) = throwError e
-liftOutcome (Pure _ a) = pure a
+resolveOutcome :: MonadThrow e m => Outcome e a -> m a
+resolveOutcome (Success a) = pure a
+resolveOutcome (Failure e) = throwError e
+resolveOutcome (Pure _ a) = pure a
 
 type ParseOutcome l t = Outcome (ParseError l t)
 
 type Parser l t ts a = ReaderT (EOFOr t -> l) (StateT ts (ParseOutcome l t)) a
 
 runParser :: MonadThrow (ParseError l t) m => Parser l t ts a -> (EOFOr t -> l) -> ts -> m a
-runParser p fLocation ts = liftOutcome $ fst <$> runStateT (runReaderT p fLocation) ts
+runParser p fLocation ts = resolveOutcome $ fst <$> runStateT (runReaderT p fLocation) ts
 
 parser :: (Ord l, Cons ts ts t t) => (Maybe (t, ts) -> Parser l t ts a) -> Parser l t ts a
-parser f = gets uncons >>= \case
+parser f = gets uncons >>= \p -> case p of
   Nothing -> f Nothing
-  Just (t, ts) -> put ts *> f (Just (t, ts))
+  Just (t, ts) -> put ts *> f p
 
 eof :: (Ord l, Cons ts ts t t) => Parser l t ts ()
 eof = parser $ \case
