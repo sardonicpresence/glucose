@@ -4,7 +4,7 @@ module Glucose.IR where
 import Control.Comonad
 import Data.List
 import Glucose.Identifier
-import Glucose.Parser.Source
+import Glucose.Source
 
 newtype Module ann = Module [FromSource (Definition ann)]
 deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Module ann)

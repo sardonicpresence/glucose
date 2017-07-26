@@ -4,8 +4,7 @@ import Data.Monoid
 import Data.Text as Text
 import Glucose.Error
 import Glucose.Lexer
-import Glucose.Lexer.Location
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Token
 
 -- | Whitespace text.

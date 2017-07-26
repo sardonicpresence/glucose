@@ -3,11 +3,11 @@ module Glucose.AST where
 import Control.Comonad
 import Data.Text
 import Glucose.Identifier
-import Glucose.Parser.Source
+import Glucose.Source
 
 newtype Module = Module [FromSource Definition] deriving (Eq, Show)
 
-data Definition = Definition (FromSource Identifier) (FromSource Expression) (Maybe (FromSource Type)) 
+data Definition = Definition (FromSource Identifier) (FromSource Expression) (Maybe (FromSource Type))
                 | TypeDefinition (FromSource Identifier) [FromSource Identifier]
   deriving (Eq, Show)
 

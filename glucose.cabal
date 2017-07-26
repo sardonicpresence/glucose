@@ -28,13 +28,11 @@ library
                      , Glucose.Compiler
                      , Glucose.Lexer
                      , Glucose.Lexer.Char
-                     , Glucose.Lexer.Location
                      , Glucose.Lexer.NumericLiteral
                      , Glucose.Lexer.Reversible
                      , Glucose.Parser
                      , Glucose.Parser.EOFOr
                      , Glucose.Parser.Monad
-                     , Glucose.Parser.Source
                      , Glucose.AST
                      , Glucose.Desugar
                      , Glucose.Codegen
@@ -48,6 +46,7 @@ library
                      , Glucose.IR
                      , Glucose.IR.Checked
                      , Glucose.Namespace
+                     , Glucose.Source
                      , Glucose.Token
                      , Glucose.TypeChecker
                      , Glucose.VarGen

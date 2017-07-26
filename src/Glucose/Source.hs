@@ -1,13 +1,39 @@
-module Glucose.Parser.Source where
+module Glucose.Source where
 
 import Control.Comonad
-import Control.Lens
 import Data.Semigroup
 import Data.Text as Text
-import Glucose.Identifier
-import Glucose.Lexer.Location
 
--- | An inclusive range of characters in a UTF8 stream.
+-- | A location in a UTF8 document. Zero-based code-point and one-based line/column.
+data Location = Location { codePoint, line, column :: Int } deriving (Eq, Ord)
+
+instance Show Location where
+  show (Location cp line col) = show line ++ ":" ++ show col ++ "@" ++ show cp
+
+instance Read Location where
+  readsPrec d s0 = [ (Location cp line col, s5)
+                   | (line, s1) <- readsPrec (d+1) s0
+                   , (":", s2) <- lex s1
+                   , (col, s3) <- readsPrec (d+1) s2
+                   , ("@", s4) <- lex s3
+                   , (cp, s5) <- readsPrec (d+1) s4]
+
+-- | The first character in a UTF8 document.
+beginning :: Location
+beginning = Location 0 1 1
+
+-- | The number of code-points between 2 locations.
+codePointsBetween :: Location -> Location -> Int
+codePointsBetween (Location start _ _) (Location end _ _) = end - start
+
+-- | Rewind a location to the previous code-point & column.
+-- It as an error to attempt to rewind past the beginning of a line.
+rewind :: Location -> Location
+rewind (Location _ _ 1) = error "Can't rewind a Location past a newline!"
+rewind (Location cp line col) = Location (cp-1) line (col-1)
+
+
+-- | An inclusive range of characters in UTF8 text.
 data SourceRange = SourceRange Location Location deriving (Eq, Ord)
 
 instance Show SourceRange where
@@ -22,6 +48,7 @@ instance Read SourceRange where
 
 instance Semigroup SourceRange where
   SourceRange a b <> SourceRange c d = SourceRange (min a c) (max b d)
+
 
 -- | Functor associating a value with a range of chracters.
 data FromSource a = FromSource SourceRange a deriving (Eq, Ord, Functor)
@@ -48,17 +75,11 @@ instance Foldable FromSource where
 instance Traversable FromSource where
   traverse f (FromSource s a) = FromSource s <$> f a
 
-instance Bound a => Bound (FromSource a) where
-  identifier (FromSource _ a) = identifier a
-
 startLocation :: FromSource a -> Location
 startLocation (FromSource (SourceRange start _) _) = start
 
 endLocation :: FromSource a -> Location
 endLocation (FromSource (SourceRange _ end) _) = end
-
-_fromSource :: Lens' (FromSource a) a
-_fromSource = lens extract ($>)
 
 showSource :: FromSource a -> Text -> Text
 showSource (FromSource (SourceRange from to) _) =

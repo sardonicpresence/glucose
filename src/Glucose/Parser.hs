@@ -10,11 +10,10 @@ import Data.Monoid
 import Glucose.AST as AST
 import Glucose.Error
 import Glucose.Identifier as AST hiding (identifier)
-import Glucose.Lexer.Location
 import Glucose.Token as Token
 import Glucose.Parser.EOFOr
 import Glucose.Parser.Monad
-import Glucose.Parser.Source
+import Glucose.Source
 
 infixl 4 <$$>, <$$, <**>, <**, **>
 

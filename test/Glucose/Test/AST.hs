@@ -3,7 +3,7 @@ module Glucose.Test.AST where
 import Data.Text (Text)
 import Glucose.AST
 import Glucose.Identifier (Identifier(..))
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Test.Source
 
 constant :: Text -> Literal -> FromSource Definition

@@ -11,9 +11,8 @@ import Data.Text (Text, pack, unpack)
 import Glucose.Error hiding (unexpected)
 import qualified Glucose.Error as Error
 import Glucose.Lexer.Char
-import Glucose.Lexer.Location
 import Glucose.Lexer.NumericLiteral
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Token
 
 type Tokenised = (Location, [FromSource Token])

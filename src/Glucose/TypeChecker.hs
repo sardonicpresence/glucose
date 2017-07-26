@@ -13,10 +13,9 @@ import Glucose.Error
 import Glucose.Identifier
 import Glucose.IR
 import Glucose.IR.Checked (bindTypes, bindType, rebindType, freeTypes)
-import Glucose.Lexer.Location
 import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.VarGen
 
 data TypeChecker = TypeChecker

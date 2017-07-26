@@ -5,8 +5,8 @@ import Data.List as List
 import qualified Data.List.NonEmpty as NonEmpty
 import Text.Megaparsec
 import qualified Glucose.Error as Glucose
-import Glucose.Lexer.Location
 import Glucose.Lexer.SyntacticToken
+import Glucose.Source
 
 instance Stream [SyntacticToken] where
   type Token [SyntacticToken] = SyntacticToken

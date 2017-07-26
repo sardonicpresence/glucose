@@ -3,8 +3,8 @@ module Glucose.Test.Lexer where
 import Data.List as List
 import Data.Text as Text
 import Glucose.Lexer.Char
-import Glucose.Lexer.Location
 import Glucose.Lexer.Reversible
+import Glucose.Source
 import Glucose.Token
 import Numeric
 import Test.QuickCheck.Arbitrary

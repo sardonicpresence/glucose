@@ -9,7 +9,7 @@ import Glucose.IR
 import Glucose.Error
 import Glucose.Lexer (tokenise)
 import Glucose.Parser (parse)
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Desugar (desugar)
 import Glucose.Test.Error
 import Glucose.Test.IR.Checked

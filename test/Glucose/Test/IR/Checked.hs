@@ -5,7 +5,7 @@ import Glucose.Test.IR.Core
 import Data.Text
 import Glucose.Identifier
 import Glucose.IR
-import Glucose.Parser.Source
+import Glucose.Source
 
 alias :: FromSource Text -> FromSource Text -> Type Checked -> FromSource (Definition Checked)
 alias to from ty = definition to $ reference Global from ty

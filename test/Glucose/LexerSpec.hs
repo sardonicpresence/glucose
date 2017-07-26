@@ -5,8 +5,9 @@ import Test.Prelude
 import Data.Text as Text (pack, foldl)
 import Glucose.Error
 import Glucose.Lexer
-import Glucose.Lexer.Location
+import Glucose.Lexer.Char (updateLocation)
 import Glucose.Lexer.Reversible hiding (token)
+import Glucose.Source
 import Glucose.Test.Error
 import Glucose.Test.Lexer ()
 import Glucose.Token

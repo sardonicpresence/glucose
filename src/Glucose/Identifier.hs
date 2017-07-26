@@ -1,11 +1,13 @@
 module Glucose.Identifier where
 
+import Control.Comonad
 import Control.Monad
 import Data.Map as Map
 import Data.Map.Utils
 import Data.String
 import Data.Text
 import Glucose.Lexer.Char
+import Glucose.Source
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
@@ -27,6 +29,9 @@ class Bound a where
 
 instance Bound Identifier where
   identifier = id
+
+instance Bound a => Bound (FromSource a) where
+  identifier = identifier . extract
 
 bindings :: (Monad m, Bound a) => (a -> a -> m (Map Identifier a)) -> [a] -> m (Map Identifier a)
 bindings onDuplicate defs = go defs Map.empty where

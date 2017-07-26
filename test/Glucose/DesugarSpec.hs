@@ -8,7 +8,7 @@ import Glucose.IR
 import Glucose.Error
 import Glucose.Lexer (tokenise)
 import Glucose.Parser (parse)
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Test.IR.Unchecked
 import qualified Glucose.Desugar as Desugar
 

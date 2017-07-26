@@ -4,7 +4,7 @@ import Control.Comonad
 import Data.Text (Text)
 import Glucose.Identifier (Identifier (..))
 import Glucose.IR
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Test.Source
 
 -- * Without source locations

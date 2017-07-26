@@ -3,7 +3,7 @@ module Glucose.Test.Error where
 import Data.Text
 import Glucose.Error
 import Glucose.Parser.EOFOr
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Token
 
 compileError :: String -> ErrorDetails -> CompileError

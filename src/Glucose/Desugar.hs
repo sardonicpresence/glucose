@@ -6,7 +6,7 @@ import Glucose.AST as AST
 import Glucose.Error
 import Glucose.Identifier
 import Glucose.IR as IR
-import Glucose.Parser.Source
+import Glucose.Source
 
 type Desugared t = FromSource (t Unchecked)
 

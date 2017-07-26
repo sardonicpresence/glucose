@@ -11,8 +11,7 @@ import Data.Map.Strict as Map
 import qualified Glucose.IR as IR
 import Glucose.Error
 import Glucose.Identifier
-import Glucose.Lexer.Location
-import Glucose.Parser.Source
+import Glucose.Source
 
 type Arg = IR.Arg IR.Checked
 type Definition = IR.Definition IR.Checked

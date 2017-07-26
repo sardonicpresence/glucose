@@ -6,7 +6,7 @@ import Control.Comonad
 import Glucose.IR.Checked as IR
 import Glucose.Codegen.LLVM as LLVM hiding (codegenDefinitions)
 import qualified Glucose.Codegen.LLVM as LLVM (codegenDefinitions)
-import Glucose.Parser.Source (FromSource)
+import Glucose.Source (FromSource)
 import Glucose.Test.IR.Checked
 import LLVM.AST as LLVM
 import LLVM.DSL

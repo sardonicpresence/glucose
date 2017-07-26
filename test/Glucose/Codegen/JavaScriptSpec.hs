@@ -6,7 +6,7 @@ import Control.Comonad
 import Glucose.IR.Checked as IR
 import Glucose.Codegen.JavaScript hiding (codegenDefinitions)
 import qualified  Glucose.Codegen.JavaScript as JS (codegenDefinitions)
-import Glucose.Parser.Source
+import Glucose.Source
 import Glucose.Test.IR.Checked
 
 spec :: Spec

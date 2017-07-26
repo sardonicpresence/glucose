@@ -8,9 +8,8 @@ import qualified Glucose.AST as AST
 import Glucose.Error
 import Glucose.Identifier
 import Glucose.Lexer
-import Glucose.Lexer.Location
 import Glucose.Parser
-import Glucose.Parser.Source
+import Glucose.Source
 import qualified Glucose.Token as Token
 import Glucose.Test.Error
 
