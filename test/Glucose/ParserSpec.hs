@@ -11,6 +11,7 @@ import Glucose.Lexer
 import Glucose.Parser
 import Glucose.Source
 import qualified Glucose.Token as Token
+import Glucose.Test.AST
 import Glucose.Test.Error
 
 spec :: Spec
@@ -21,19 +22,19 @@ spec = describe "parse" $ do
     parseTokens "a=" `shouldErrorWith` unexpectedEof "1:3@2" ["identifier","literal","lambda"]
   it "parses global numeric literal definitions correctly" $
     let a = Identifier "a" `at` "1:1@0 - 1:1@0"
-        valueA = AST.Value (AST.integerLiteral 123) `at` "1:3@2 - 1:5@4"
+        valueA = integerLiteral 123 `at` "1:3@2 - 1:5@4"
         b = Identifier "b" `at` "2:1@6 - 2:1@6"
-        valueB = AST.Value (AST.floatLiteral 0.98) `at` "2:3@8 - 2:6@11"
+        valueB = floatLiteral 0.98 `at` "2:3@8 - 2:6@11"
      in parseTokens "a=123\nb=0.98" `shouldParseAs`
           [ AST.Definition a valueA Nothing `at` "1:1@0 - 1:5@4"
           , AST.Definition b valueB Nothing `at` "2:1@6 - 2:6@11"]
   it "parses global constant aliases correctly" $
     let a = Identifier "a" `at` "1:1@0 - 1:1@0"
-        b = AST.Value (AST.variable "b") `at` "1:3@2 - 1:3@2"
+        b = variable "b" `at` "1:3@2 - 1:3@2"
      in parseTokens "a=b" `shouldParseAs` [AST.Definition a b Nothing `at` "1:1@0 - 1:3@2"]
   it "parses definition at eof without newline" $
     let a = Identifier "a" `at` "1:1@0 - 1:1@0"
-        value = AST.Value (AST.integerLiteral 123) `at` "1:3@2 - 1:5@4"
+        value = integerLiteral 123 `at` "1:3@2 - 1:5@4"
      in parseTokens "a=123" `shouldParseAs` [AST.Definition a value Nothing `at` "1:1@0 - 1:5@4"]
   it "errors on superfluous tokens after definition" $
     let unexpected = Token.Operator Token.Arrow `at` "1:7@6 - 1:8@7"

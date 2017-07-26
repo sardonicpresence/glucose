@@ -6,10 +6,7 @@ import Data.Map as Map
 import Data.Map.Utils
 import Data.String
 import Data.Text
-import Glucose.Lexer.Char
 import Glucose.Source
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Gen
 
 newtype Identifier = Identifier { identify :: Text } deriving (Eq, Ord)
 
@@ -18,11 +15,6 @@ instance Show Identifier where
 
 instance IsString Identifier where
   fromString = Identifier . pack
-
-instance Arbitrary Identifier where
-  arbitrary = fmap (Identifier . pack) . (:)
-    <$> arbitrary `suchThat` (\c -> isIdentifier c && not (isDigit c))
-    <*> listOf (arbitrary `suchThat` isIdentifier)
 
 class Bound a where
   identifier :: a -> Identifier

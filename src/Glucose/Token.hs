@@ -1,12 +1,7 @@
 module Glucose.Token where
 
 import Control.Lens.Prism
-import Data.Ratio
 import Data.Text
-import Glucose.Identifier (identify)
-import Glucose.Lexer.Char
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Gen
 
 data Keyword
   = Type
@@ -40,45 +35,24 @@ data Token
   | CloseParen
   | IntegerLiteral Integer
   | FloatLiteral Rational
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
 
-instance Arbitrary Keyword where
-  arbitrary = oneof [ pure Type ]
-
-instance Arbitrary Operator where
-  arbitrary = oneof
-    [ pure Assign
-    , pure Arrow
-    , pure Bar
-    , CustomOperator . pack <$> (listOf1 (arbitrary `suchThat` isOperator) `suchThat` (not . flip elem ["=", ":", "->", "|"])) ]
-
-instance Arbitrary Token where
-  arbitrary = oneof
-    [ pure EndOfDefinition
-    , pure BeginLambda
-    , Identifier . identify <$> arbitrary
-    , Keyword <$> arbitrary
-    , Operator <$> arbitrary
-    , pure OpenParen
-    , pure CloseParen
-    , IntegerLiteral <$> arbitrary `suchThat` (>=0)
-    , FloatLiteral <$> do
-        base <- arbitrary `suchThat` (>=0)
-        e <- arbitrary `suchThat` (>=0) :: Gen Integer
-        pure (base % 10^e)
-    ]
+instance Show Token where
+  show EndOfDefinition = "\n"
+  show BeginLambda = "\\"
+  show (Identifier a) = show a
+  show (Keyword a) = show a
+  show (Operator a) = show a
+  show OpenParen = "("
+  show CloseParen = ")"
+  show (IntegerLiteral a) = show a
+  show (FloatLiteral a) = show a
 
 _endOfDefinition :: Prism' Token ()
 _endOfDefinition = prism' (const EndOfDefinition) $ \case EndOfDefinition -> Just (); _ -> Nothing
 
 _beginLambda :: Prism' Token ()
 _beginLambda = prism' (const BeginLambda) $ \case BeginLambda -> Just (); _ -> Nothing
-
-_openParen :: Prism' Token ()
-_openParen = prism' (const OpenParen) $ \case OpenParen -> Just (); _ -> Nothing
-
-_closeParen :: Prism' Token ()
-_closeParen = prism' (const CloseParen) $ \case CloseParen -> Just (); _ -> Nothing
 
 _identifier :: Prism' Token Text
 _identifier = prism' Identifier $ \case Identifier a -> Just a; _ -> Nothing
@@ -88,6 +62,12 @@ _keyword = prism' Keyword $ \case Keyword a -> Just a; _ -> Nothing
 
 _operator :: Prism' Token Operator
 _operator = prism' Operator $ \case Operator a -> Just a; _ -> Nothing
+
+_openParen :: Prism' Token ()
+_openParen = prism' (const OpenParen) $ \case OpenParen -> Just (); _ -> Nothing
+
+_closeParen :: Prism' Token ()
+_closeParen = prism' (const CloseParen) $ \case CloseParen -> Just (); _ -> Nothing
 
 _integerLiteral :: Prism' Token Integer
 _integerLiteral = prism' IntegerLiteral $ \case IntegerLiteral a -> Just a; _ -> Nothing

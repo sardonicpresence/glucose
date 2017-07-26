@@ -1,7 +1,6 @@
 module Glucose.AST where
 
 import Control.Comonad
-import Data.Text
 import Glucose.Identifier
 
 newtype Module f = Module [f (Definition f)]
@@ -45,12 +44,3 @@ instance Show Type where
   show (Function a@Function{} b) = "(" ++ show a ++ ")->" ++ show b
   show (Function a b) = show a ++ "->" ++ show b
   show (Bound name) = show name
-
-integerLiteral :: Int -> Value f
-integerLiteral = Literal . IntegerLiteral
-
-floatLiteral :: Double -> Value f
-floatLiteral = Literal . FloatLiteral
-
-variable :: Text -> Value f
-variable = Variable . Identifier

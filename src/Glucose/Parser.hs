@@ -10,10 +10,10 @@ import Data.Monoid
 import Glucose.AST as AST
 import Glucose.Error
 import Glucose.Identifier as AST hiding (identifier)
-import Glucose.Token as Token
 import Glucose.Parser.EOFOr
 import Glucose.Parser.Monad
 import Glucose.Source
+import Glucose.Token as Token
 
 type Parse f a = Parser Location (f Token) [f Token] a
 type ParseCompound f a = Parse f (f (a f))
@@ -94,7 +94,7 @@ closeParen = lexeme "close parenthesis" . traverse $ is _closeParen
 
 -- * Utilities
 
-infixl 4 <$$>, <$$, <**>, <**, **>
+infixl 4 <$$>, <$$, <**>
 
 (<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
 (<$$>) = (<$>) . (<$>)
@@ -104,12 +104,6 @@ a <$$ b = const a <$$> b
 
 (<**>) :: (Applicative f, Applicative g) => f (g (a -> b)) -> f (g a) -> f (g b)
 f <**> a = (<*>) <$> f <*> a
-
-(**>) :: (Applicative f, Applicative g) => f (g a) -> f (g b) -> f (g b)
-a **> b = flip const <$$> a <**> b
-
-(<**) :: (Applicative f, Applicative g) => f (g a) -> f (g b) -> f (g a)
-a <** b = const <$$> a <**> b
 
 is :: Getting (First ()) s a -> s -> Maybe ()
 is a = preview $ a . like ()

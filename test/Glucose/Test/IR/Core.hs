@@ -13,10 +13,10 @@ constantAnywhere :: Text -> Literal -> FromSource (Definition ann)
 constantAnywhere name lit = definitionAnywhere name (Literal lit)
 
 constructorAnywhere :: Text -> Text -> Int -> FromSource (Definition ann)
-constructorAnywhere ty ctor index = definitionAnywhere ctor $ Constructor (fromSource $ Identifier ty) index
+constructorAnywhere ty ctor index = definitionAnywhere ctor $ Constructor (anywhere $ Identifier ty) index
 
 definitionAnywhere :: Text -> Expression ann -> FromSource (Definition ann)
-definitionAnywhere name value = definition (fromSource name) (fromSource value)
+definitionAnywhere name value = definition (anywhere name) (anywhere value)
 
 -- * With source locations
 

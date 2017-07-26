@@ -1,7 +1,10 @@
 module Glucose.Test.Lexer where
 
 import Data.List as List
+import Data.Ratio ((%))
+import Data.String (fromString)
 import Data.Text as Text
+import Glucose.Identifier (Identifier, identify)
 import Glucose.Lexer.Char
 import Glucose.Lexer.Reversible
 import Glucose.Source
@@ -9,6 +12,37 @@ import Glucose.Token
 import Numeric
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
+
+instance Arbitrary Identifier where
+  arbitrary = fmap fromString . (:)
+    <$> arbitrary `suchThat` (\c -> isIdentifier c && not (isDigit c))
+    <*> listOf (arbitrary `suchThat` isIdentifier)
+
+instance Arbitrary Keyword where
+  arbitrary = oneof [ pure Type ]
+
+instance Arbitrary Operator where
+  arbitrary = oneof
+    [ pure Assign
+    , pure Arrow
+    , pure Bar
+    , CustomOperator . pack <$> (listOf1 (arbitrary `suchThat` isOperator) `suchThat` (not . flip elem ["=", ":", "->", "|"])) ]
+
+instance Arbitrary Token where
+  arbitrary = oneof
+    [ pure EndOfDefinition
+    , pure BeginLambda
+    , Identifier . identify <$> arbitrary
+    , Keyword <$> arbitrary
+    , Operator <$> arbitrary
+    , pure OpenParen
+    , pure CloseParen
+    , IntegerLiteral <$> arbitrary `suchThat` (>=0)
+    , FloatLiteral <$> do
+        base <- arbitrary `suchThat` (>=0)
+        e <- arbitrary `suchThat` (>=0) :: Gen Integer
+        pure (base % 10^e)
+    ]
 
 instance Arbitrary TokenisedReversible where
   arbitrary = TokenisedReversible <$> arbitrary <*> arbitraryTokens `suchThat` (not . endsLastDefinition) where
