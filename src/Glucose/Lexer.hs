@@ -67,7 +67,7 @@ maybeAppend c Gap | isSpace c = pure $ Just Gap
 maybeAppend c (PartialIdentifier cs) | isIdentifier c = pure . Just $ PartialIdentifier (c:cs)
 maybeAppend c (PartialOperator cs) | isOperator c = pure . Just $ PartialOperator (c:cs)
 maybeAppend c (NumericLiteral lit) = do
-  lit' <- toLex $ extendNumericLiteral c lit
+  lit' <- locateError $ extendNumericLiteral c lit
   maybe nextLexemeOrError (pure . Just .  NumericLiteral) lit'
   where nextLexemeOrError = Nothing <$ when (isIdentifier c) (unexpectedChar c "in numeric literal")
 maybeAppend _ _ = pure Nothing
@@ -101,7 +101,7 @@ completeLexeme nextChar = gets partial >>= \case
   PartialOperator ">-" -> tellLexeme nextChar $ Operator Arrow
   PartialOperator cs -> tellLexeme nextChar $ Operator $ CustomOperator (pack $ reverse cs)
   NumericLiteral lit -> do
-    (token, lastChar) <- toLex $ completeNumericLiteral lit
+    (token, lastChar) <- locateError $ completeNumericLiteral lit
     case lastChar of
       Nothing -> tellLexeme nextChar token
       Just lc -> do
@@ -113,8 +113,8 @@ completeLexeme nextChar = gets partial >>= \case
             _pos %= updateLocation lc
             consumeChar nc
 
-toLex :: Error m => RWST () [FromSource Token] Lexer (Either ErrorDetails) a -> Lex m a
-toLex m = gets pos >>= \loc -> mapRWST (locateError loc) m
+locateError :: Error m => Lex (Either ErrorDetails) a -> Lex m a
+locateError m = gets pos >>= \loc -> mapRWST (either (throwError . CompileError loc) pure) m
 
 implicitEndOfDefinition :: Monad m => Lex m ()
 implicitEndOfDefinition = do

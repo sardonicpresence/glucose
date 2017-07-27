@@ -1,10 +1,9 @@
 module Glucose.Error
 (
   module Control.Monad.Except,
-  CompileError(..), ErrorDetails(..), Error,
-  formatError,
+  Error, CompileError(..), ErrorDetails(..),
   syntaxError, unexpected, duplicateDefinition, unrecognisedVariable, recursiveDefinition, typeMismatch,
-  locateError
+  formatError,
 ) where
 
 import Control.Comonad
@@ -16,6 +15,8 @@ import Glucose.Identifier
 import Glucose.Parser.EOFOr
 import Glucose.Source
 import Glucose.Token as Token
+
+type Error m = MonadError CompileError m
 
 data CompileError = CompileError { location :: Location, details :: ErrorDetails } deriving (Eq, Show)
 
@@ -37,6 +38,28 @@ instance Semigroup ErrorDetails where
   (Unexpected thing context expectations1) <> (Unexpected _ _ expectations2) =
     Unexpected thing context (expectations1 <> expectations2)
   a <> _ = a
+
+-- * Error throwing functions
+
+syntaxError :: Error m => Location -> String -> String -> m a
+syntaxError loc a b = throwError $ CompileError loc $ SyntaxError (pack a) (pack b)
+
+unexpected :: Error m => Location -> String -> String -> m a
+unexpected loc a b = throwError $ CompileError loc $ Unexpected (Left $ pack a) (Just $ pack b) []
+
+duplicateDefinition :: Error m => Location -> Identifier -> Location -> m a
+duplicateDefinition loc a b = throwError $ CompileError loc $ DuplicateDefinition a b
+
+unrecognisedVariable :: Error m => Location -> Identifier -> m a
+unrecognisedVariable loc a = throwError $ CompileError loc $ UnrecognisedVariable a
+
+recursiveDefinition :: Error m => Location -> Identifier -> m a
+recursiveDefinition loc a = throwError $ CompileError loc $ RecursiveDefinition a
+
+typeMismatch :: (Error m, Show t) => Location -> t -> t -> m a
+typeMismatch loc a b = throwError $ CompileError loc $ TypeMismatch (pack $ show a) (pack $ show b)
+
+-- * Error formatting
 
 formatError :: Text -> CompileError -> Text
 formatError source (CompileError loc details) = showLocation loc <> ":\n" <> formatDetails source details <> "\n"
@@ -68,26 +91,6 @@ formatList (a:as) = a <> ", " <> formatList as
 ifNotNull :: (Text -> Text) -> Text -> Text
 ifNotNull f a = if Text.null a then a else f a
 
-type Error m = MonadError CompileError m
-
-syntaxError :: Error m => Location -> String -> String -> m a
-syntaxError loc a b = throwError $ CompileError loc $ SyntaxError (pack a) (pack b)
-
-unexpected :: Error m => Location -> String -> String -> m a
-unexpected loc a b = throwError $ CompileError loc $ Unexpected (Left $ pack a) (Just $ pack b) []
-
-duplicateDefinition :: Error m => Location -> Identifier -> Location -> m a
-duplicateDefinition loc a b = throwError $ CompileError loc $ DuplicateDefinition a b
-
-unrecognisedVariable :: Error m => Location -> Identifier -> m a
-unrecognisedVariable loc a = throwError $ CompileError loc $ UnrecognisedVariable a
-
-recursiveDefinition :: Error m => Location -> Identifier -> m a
-recursiveDefinition loc a = throwError $ CompileError loc $ RecursiveDefinition a
-
-typeMismatch :: (Error m, Show t) => Location -> t -> t -> m a
-typeMismatch loc a b = throwError $ CompileError loc $ TypeMismatch (pack $ show a) (pack $ show b)
-
 showLocation :: Location -> Text
 showLocation loc = pack $ show (line loc) ++ ":" ++ show (column loc)
 
@@ -102,7 +105,3 @@ showToken input t = let s = showSource t input in case extract t of
   CloseParen -> ")"
   IntegerLiteral _ -> "integer literal '" <> s <> "'"
   FloatLiteral _ -> "fractional literal '" <> s <> "'"
-
-locateError :: Error m => Location -> Either ErrorDetails a -> m a
-locateError loc (Left e) = throwError $ CompileError loc e
-locateError _ (Right a) = pure a
