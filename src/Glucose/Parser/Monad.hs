@@ -5,16 +5,8 @@ import Control.Lens hiding (traverse1)
 import Control.Monad.Throw
 import Control.Monad.Reader
 import Control.Monad.State.Strict
-import Data.Function
 import Data.Semigroup
 import Glucose.Parser.EOFOr
-
-data ParseError l t = ParseError { location :: l, unexpected :: EOFOr t, expected :: [EOFOr String] }
-
-instance Ord l => Semigroup (ParseError l t) where
-  a <> b | location a > location b = a
-  a <> b | location b > location a = b
-  a <> b = ParseError (location a) (unexpected a) (((<>) `on` expected) a b)
 
 data Outcome e a = Failure e | Success a | Pure (Maybe e) a deriving (Show)
 
@@ -54,37 +46,40 @@ instance Semigroup e => MonadPlus (Outcome e)
 instance Semigroup e => MonadThrow e (Outcome e) where
   throwError = Failure
 
+-- instance Semigroup e => MonadError e (Outcome e) where
+--   throwError = Failure
+--   catchError (Failure e) f = f e
+--   catchError a = a
+
 resolveOutcome :: MonadThrow e m => Outcome e a -> m a
 resolveOutcome (Success a) = pure a
 resolveOutcome (Failure e) = throwError e
 resolveOutcome (Pure _ a) = pure a
 
-type ParseOutcome l t = Outcome (ParseError l t)
+type Parser e t ts a = ReaderT (EOFOr t -> [EOFOr String] -> e) (StateT ts (Outcome e)) a
 
-type Parser l t ts a = ReaderT (EOFOr t -> l) (StateT ts (ParseOutcome l t)) a
+runParser :: (MonadThrow e m, Semigroup e) => Parser e t ts a -> (EOFOr t -> [EOFOr String] -> e) -> ts -> m a
+runParser p onError ts = resolveOutcome $ fst <$> runStateT (runReaderT p onError) ts
 
-runParser :: MonadThrow (ParseError l t) m => Parser l t ts a -> (EOFOr t -> l) -> ts -> m a
-runParser p fLocation ts = resolveOutcome $ fst <$> runStateT (runReaderT p fLocation) ts
-
-parser :: (Ord l, Cons ts ts t t) => (Maybe (t, ts) -> Parser l t ts a) -> Parser l t ts a
+parser :: (Semigroup e, Cons ts ts t t) => (Maybe (t, ts) -> Parser e t ts a) -> Parser e t ts a
 parser f = gets uncons >>= \p -> case p of
   Nothing -> f Nothing
   Just (_, ts) -> put ts *> f p
 
-eof :: (Ord l, Cons ts ts t t) => Parser l t ts ()
+eof :: (Semigroup e, Cons ts ts t t) => Parser e t ts ()
 eof = parser $ \case
   Nothing -> pure ()
   Just (t, _) -> parseError (NotEOF t) EOF
 
-lexeme :: (Ord l, Cons ts ts t t) => String -> (t -> Maybe a) -> Parser l t ts a
+lexeme :: (Semigroup e, Cons ts ts t t) => String -> (t -> Maybe a) -> Parser e t ts a
 lexeme label f = parser $ \case
   Nothing -> parseError EOF (NotEOF label)
   Just (t, ts') -> case f t of
     Nothing -> parseError (NotEOF t) (NotEOF label)
     Just a -> put ts' *> pure a
 
-parseError :: Ord l => EOFOr t -> EOFOr String -> Parser l t ts a
-parseError u e = asks ($ u) >>= \l -> throwError $ ParseError l u [e]
+parseError :: Semigroup e => EOFOr t -> EOFOr String -> Parser e t ts a
+parseError u e = asks (\f -> f u [e]) >>= throwError
 
 -- * Utilities
 

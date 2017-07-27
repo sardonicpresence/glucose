@@ -9,17 +9,20 @@ module Glucose.Error
 
 import Control.Comonad
 import Control.Monad.Throw
-import Data.List
-import Data.Monoid
+import Data.Semigroup
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Glucose.Identifier
 import Glucose.Parser.EOFOr
-import Glucose.Parser.Monad (ParseError(ParseError))
 import Glucose.Source
 import Glucose.Token as Token
 
-data CompileError = CompileError Location ErrorDetails deriving (Eq, Show)
+data CompileError = CompileError { location :: Location, details :: ErrorDetails } deriving (Eq, Show)
+
+instance Semigroup CompileError where
+  a <> b | location a > location b = a
+  a <> b | location b > location a = b
+  a <> b = CompileError (location a) (details a <> details b)
 
 data ErrorDetails
   = SyntaxError Text Text
@@ -29,6 +32,11 @@ data ErrorDetails
   | RecursiveDefinition Identifier
   | TypeMismatch Text Text
   deriving (Eq, Show)
+
+instance Semigroup ErrorDetails where
+  (Unexpected thing context expectations1) <> (Unexpected _ _ expectations2) =
+    Unexpected thing context (expectations1 <> expectations2)
+  a <> _ = a
 
 formatError :: Text -> CompileError -> Text
 formatError source (CompileError loc details) = showLocation loc <> ":\n" <> formatDetails source details <> "\n"
@@ -61,11 +69,6 @@ ifNotNull :: (Text -> Text) -> Text -> Text
 ifNotNull f a = if Text.null a then a else f a
 
 type Error m = MonadThrow CompileError m
-
-instance MonadThrow CompileError m => MonadThrow (ParseError Location (FromSource Token)) m where
-  throwError (ParseError location unexpected expected) = throwError $ CompileError location $
-    Unexpected (Right unexpected) Nothing (fromExpected expected) where
-    fromExpected = map (maybeEOF "end of file" pack) . nub
 
 syntaxError :: Error m => Location -> String -> String -> m a
 syntaxError loc a b = throwError $ CompileError loc $ SyntaxError (pack a) (pack b)

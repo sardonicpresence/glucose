@@ -4,8 +4,10 @@ import Control.Applicative hiding ((<**>))
 import Control.Comonad
 import Control.Lens hiding (traverse1)
 import Control.Monad
+import Data.List (nub)
 import Data.Maybe
 import Data.Monoid
+import Data.Text (pack)
 
 import Glucose.AST as AST
 import Glucose.Error
@@ -15,14 +17,20 @@ import Glucose.Parser.Monad
 import Glucose.Source
 import Glucose.Token as Token
 
-type Parse f a = Parser Location (f Token) [f Token] a
+type Parse f a = Parser CompileError (f Token) [f Token] a
 type ParseCompound f a = Parse f (f (a f))
 type ParseLexeme f a = Parse f (f a)
 
 type Source f = (Comonad f, Applicative f, Traversable f)
 
-parse :: MonadThrow (ParseError Location (FromSource Token)) m => Location -> [FromSource Token] -> m (Module FromSource)
-parse eofLocation = runParser moduleParser (maybeEOF eofLocation startLocation)
+parse :: Error m => Location -> [FromSource Token] -> m (Module FromSource)
+parse eofLocation = runParser moduleParser (onError eofLocation)
+
+onError :: Location -> EOFOr (FromSource Token) -> [EOFOr String] -> CompileError
+onError eofLocation unexpected expected = CompileError location details where
+  location = maybeEOF eofLocation startLocation unexpected
+  details = Unexpected (Right unexpected) Nothing (fromExpected expected)
+  fromExpected = map (maybeEOF "end of file" pack) . nub
 
 moduleParser :: Source f => Parse f (Module f)
 moduleParser = Module <$> many ((definition <|> typeDefinition) <* endOfDefinition) <* eof
