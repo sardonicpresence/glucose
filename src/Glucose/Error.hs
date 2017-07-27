@@ -1,6 +1,6 @@
 module Glucose.Error
 (
-  module Control.Monad.Throw,
+  module Control.Monad.Except,
   CompileError(..), ErrorDetails(..), Error,
   formatError,
   syntaxError, unexpected, duplicateDefinition, unrecognisedVariable, recursiveDefinition, typeMismatch,
@@ -8,7 +8,7 @@ module Glucose.Error
 ) where
 
 import Control.Comonad
-import Control.Monad.Throw
+import Control.Monad.Except
 import Data.Semigroup
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
@@ -68,7 +68,7 @@ formatList (a:as) = a <> ", " <> formatList as
 ifNotNull :: (Text -> Text) -> Text -> Text
 ifNotNull f a = if Text.null a then a else f a
 
-type Error m = MonadThrow CompileError m
+type Error m = MonadError CompileError m
 
 syntaxError :: Error m => Location -> String -> String -> m a
 syntaxError loc a b = throwError $ CompileError loc $ SyntaxError (pack a) (pack b)
@@ -103,6 +103,6 @@ showToken input t = let s = showSource t input in case extract t of
   IntegerLiteral _ -> "integer literal '" <> s <> "'"
   FloatLiteral _ -> "fractional literal '" <> s <> "'"
 
-locateError :: MonadThrow CompileError m => Location -> Either ErrorDetails a -> m a
+locateError :: Error m => Location -> Either ErrorDetails a -> m a
 locateError loc (Left e) = throwError $ CompileError loc e
 locateError _ (Right a) = pure a

@@ -2,7 +2,7 @@ module Glucose.Parser.Monad where
 
 import Control.Applicative
 import Control.Lens hiding (traverse1)
-import Control.Monad.Throw
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Semigroup
@@ -43,22 +43,19 @@ instance Semigroup e => Monad (Outcome e) where
 
 instance Semigroup e => MonadPlus (Outcome e)
 
-instance Semigroup e => MonadThrow e (Outcome e) where
+instance Semigroup e => MonadError e (Outcome e) where
   throwError = Failure
+  catchError (Failure e) f = f e
+  catchError a _ = a
 
--- instance Semigroup e => MonadError e (Outcome e) where
---   throwError = Failure
---   catchError (Failure e) f = f e
---   catchError a = a
-
-resolveOutcome :: MonadThrow e m => Outcome e a -> m a
+resolveOutcome :: MonadError e m => Outcome e a -> m a
 resolveOutcome (Success a) = pure a
 resolveOutcome (Failure e) = throwError e
 resolveOutcome (Pure _ a) = pure a
 
 type Parser e t ts a = ReaderT (EOFOr t -> [EOFOr String] -> e) (StateT ts (Outcome e)) a
 
-runParser :: (MonadThrow e m, Semigroup e) => Parser e t ts a -> (EOFOr t -> [EOFOr String] -> e) -> ts -> m a
+runParser :: (MonadError e m, Semigroup e) => Parser e t ts a -> (EOFOr t -> [EOFOr String] -> e) -> ts -> m a
 runParser p onError ts = resolveOutcome $ fst <$> runStateT (runReaderT p onError) ts
 
 parser :: (Semigroup e, Cons ts ts t t) => (Maybe (t, ts) -> Parser e t ts a) -> Parser e t ts a

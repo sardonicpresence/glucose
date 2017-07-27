@@ -55,7 +55,6 @@ library
                      , LLVM.DSL
                      , LLVM.Name
                      , Data.Map.Utils
-                     , Control.Monad.Throw
   default-extensions:  OverloadedStrings
                      , BangPatterns
                      , MultiParamTypeClasses

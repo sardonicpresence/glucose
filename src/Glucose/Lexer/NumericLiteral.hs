@@ -18,7 +18,7 @@ data NumericLiteral = NumericLiteral Integer DecimalPlaces Exponent
 numericLiteral :: Int -> NumericLiteral
 numericLiteral n = NumericLiteral (toInteger n) NoDP NoExponent
 
-extendNumericLiteral :: MonadThrow ErrorDetails m => Char -> NumericLiteral -> m (Maybe NumericLiteral)
+extendNumericLiteral :: MonadError ErrorDetails m => Char -> NumericLiteral -> m (Maybe NumericLiteral)
 extendNumericLiteral '.' (NumericLiteral n NoDP NoExponent) = pure.pure $ NumericLiteral n (DP 0) NoExponent
 extendNumericLiteral 'e' (NumericLiteral _ (DP 0) NoExponent) = pure Nothing
 extendNumericLiteral 'e' (NumericLiteral n dp NoExponent) = pure.pure $ NumericLiteral n dp Missing
@@ -35,7 +35,7 @@ addDigit 0 (NumericLiteral n dp Negative) = NumericLiteral n dp Negative
 addDigit d (NumericLiteral n dp Negative) = NumericLiteral n dp (Exponent (-d))
 addDigit d (NumericLiteral n dp (Exponent e)) = NumericLiteral n dp (Exponent $ e*10 + d)
 
-completeNumericLiteral :: MonadThrow ErrorDetails m => NumericLiteral -> m (Token, Maybe Char)
+completeNumericLiteral :: MonadError ErrorDetails m => NumericLiteral -> m (Token, Maybe Char)
 completeNumericLiteral (NumericLiteral n (DP 0) _) = pure (IntegerLiteral n, Just '.')
 completeNumericLiteral (NumericLiteral n NoDP NoExponent) = purely $ IntegerLiteral n
 completeNumericLiteral (NumericLiteral n NoDP (Exponent e)) | e >= 0 = purely $ IntegerLiteral $ n * 10^e
@@ -48,5 +48,5 @@ completeNumericLiteral _ = throwError $ SyntaxError "missing exponent" "numeric 
 purely :: Applicative f => a -> f (a, Maybe b)
 purely a = pure (a, Nothing)
 
-negativeExponent :: MonadThrow ErrorDetails m => m a
+negativeExponent :: MonadError ErrorDetails m => m a
 negativeExponent = throwError $ SyntaxError "negative exponent" "integer literal"
