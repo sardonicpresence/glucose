@@ -1,86 +1,67 @@
 module Glucose.Error
-(
-  module Control.Monad.Except,
-  Error, CompileError(..), ErrorDetails(..),
-  syntaxError, unexpected, duplicateDefinition, unrecognisedVariable, recursiveDefinition, typeMismatch,
-  formatError,
-) where
+-- (
+--   module Control.Monad.Except,
+--   Error, CompileError(..), ErrorDetails(..),
+--   syntaxError, unexpected, duplicateDefinition, unrecognisedVariable, recursiveDefinition, typeMismatch,
+--   formatError,
+-- )
+where
 
 import Control.Comonad
 import Control.Monad.Except
 import Data.Semigroup
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
-import Glucose.Identifier
+import Glucose.Lexer.SyntaxError
 import Glucose.Parser.EOFOr
+import Glucose.Parser.ParseError
 import Glucose.Source
 import Glucose.Token as Token
+import Glucose.TypeChecker.TypeCheckError
 
-type Error m = MonadError CompileError m
+data CompileError = forall e. ErrorDetails e => CompileError e
 
-data CompileError = CompileError { location :: Location, details :: ErrorDetails } deriving (Eq, Show)
+liftErrors :: (ErrorDetails e, MonadError CompileError m) => Either e a -> m a
+liftErrors = either (throwError . CompileError) pure
 
-instance Semigroup CompileError where
-  a <> b | location a > location b = a
-  a <> b | location b > location a = b
-  a <> b = CompileError (location a) (details a <> details b)
-
-data ErrorDetails
-  = SyntaxError Text Text
-  | Unexpected (Either Text (EOFOr (FromSource Token))) (Maybe Text) [Text]
-  | DuplicateDefinition Identifier Location
-  | UnrecognisedVariable Identifier
-  | RecursiveDefinition Identifier
-  | TypeMismatch Text Text
-  deriving (Eq, Show)
-
-instance Semigroup ErrorDetails where
-  (Unexpected thing context expectations1) <> (Unexpected _ _ expectations2) =
-    Unexpected thing context (expectations1 <> expectations2)
-  a <> _ = a
-
--- * Error throwing functions
-
-syntaxError :: Error m => Location -> String -> String -> m a
-syntaxError loc a b = throwError $ CompileError loc $ SyntaxError (pack a) (pack b)
-
-unexpected :: Error m => Location -> String -> String -> m a
-unexpected loc a b = throwError $ CompileError loc $ Unexpected (Left $ pack a) (Just $ pack b) []
-
-duplicateDefinition :: Error m => Location -> Identifier -> Location -> m a
-duplicateDefinition loc a b = throwError $ CompileError loc $ DuplicateDefinition a b
-
-unrecognisedVariable :: Error m => Location -> Identifier -> m a
-unrecognisedVariable loc a = throwError $ CompileError loc $ UnrecognisedVariable a
-
-recursiveDefinition :: Error m => Location -> Identifier -> m a
-recursiveDefinition loc a = throwError $ CompileError loc $ RecursiveDefinition a
-
-typeMismatch :: (Error m, Show t) => Location -> t -> t -> m a
-typeMismatch loc a b = throwError $ CompileError loc $ TypeMismatch (pack $ show a) (pack $ show b)
 
 -- * Error formatting
 
-formatError :: Text -> CompileError -> Text
-formatError source (CompileError loc details) = showLocation loc <> ":\n" <> formatDetails source details <> "\n"
+class ErrorDetails e where
+  formatDetails :: Text -> e -> Located Text
 
-formatDetails :: Text -> ErrorDetails -> Text
-formatDetails source = \case
-  SyntaxError error context ->
-    error <> " in " <> context
-  Unexpected thing context expectations ->
-    "unexpected " <> fromUnexpected thing source <> maybe mempty (" " <>) context <>
-    ("\nexpecting " <>) `ifNotNull` formatList expectations
-    where fromUnexpected = either const $ maybeEOF (const "end of file") (flip showToken)
-  DuplicateDefinition name prevLoc ->
-    "duplicate definition of '" <> pack (show name) <> "'\n" <>
-    "previously defined at " <> showLocation prevLoc
-  UnrecognisedVariable name ->
-    "unrecognised variable '" <> pack (show name) <> "'"
-  RecursiveDefinition name ->
-    "recursive definition: the value of '" <> pack (show name) <> "' depends on itself"
-  TypeMismatch a b ->
-    "type mismatch: expected '" <> a <> "', found '" <> b <> "'" -- TODO: improve
+instance ErrorDetails (Located SyntaxErrorDetails) where
+  formatDetails _ = fmap $ \case
+    SyntaxError error context -> error <> " " <> context
+
+instance ErrorDetails (Located ParseErrorDetails) where
+  formatDetails source = fmap $ \case
+    ParseError unexpected expected ->
+      "unexpected " <> fromUnexpected unexpected <>
+      ("\nexpecting " <>) `ifNotNull` formatList (map formatEOF expected)
+      where fromUnexpected = formatEOF . (showToken source <$>)
+
+instance ErrorDetails (TypeCheckError FromSource) where
+  formatDetails _ = \case
+    DuplicateDefinition name prevLoc -> Located (startLocation name) $
+      "duplicate definition of '" <> format name <> "'\n" <>
+      "previously defined at " <> showLocation (startLocation prevLoc)
+    UnrecognisedVariable name -> Located (startLocation name) $
+      "unrecognised variable '" <> format name <> "'"
+    RecursiveDefinition name -> Located (startLocation name) $
+      "recursive definition: the value of '" <> format name <> "' depends on itself"
+    TypeMismatch a b -> Located (startLocation a) $
+      "type mismatch: expected '" <> format a <> "', found '" <> format b <> "'" -- TODO: improve
+
+format :: (Show a, Comonad f) => f a -> Text
+format = pack . show . extract
+
+formatError :: Text -> CompileError -> Text
+formatError source (CompileError details) = case formatDetails source details of
+  Located loc description -> showLocation loc <> ":\n" <> description <> "\n"
+
+formatEOF :: EOFOr Text -> Text
+formatEOF = fromEOF "end of file"
 
 formatList :: [Text] -> Text
 formatList [] = mempty

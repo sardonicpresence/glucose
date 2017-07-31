@@ -7,64 +7,60 @@ module Glucose.Namespace
 where
 
 import Control.Applicative
+import Control.Comonad
+import Control.Monad.Except
 import Data.Map.Strict as Map
 import qualified Glucose.IR as IR
-import Glucose.Error
 import Glucose.Identifier
-import Glucose.Source
 
 type Arg = IR.Arg IR.Checked
 type Definition = IR.Definition IR.Checked
 
-data Variable = Arg (FromSource Arg) | Definition (FromSource Definition)
+data Variable f = Arg (f Arg) | Definition (f (Definition f))
 
-instance Bound Variable where
-  identifier (Arg (FromSource _ arg)) = identifier arg
-  identifier (Definition (FromSource _ def)) = identifier def
+instance Comonad f => Bound (Variable f) where
+  identifier (Arg arg) = identifier $ extract arg
+  identifier (Definition def) = identifier $ extract def
 
-locationOf :: Variable -> Location
-locationOf (Arg a) = startLocation a
-locationOf (Definition a) = startLocation a
+newtype Scope f = Scope (Map Identifier (Variable f))
 
-newtype Scope = Scope (Map Identifier Variable)
-
-newtype Namespace = Namespace [Scope]
+newtype Namespace f = Namespace [Scope f]
 
 data ScopeLevel = TopLevel | CurrentScope | ParentScope
 
-emptyNamespace :: Namespace
+emptyNamespace :: Namespace f
 emptyNamespace = Namespace [Scope Map.empty]
 
-pushScope :: Namespace -> Namespace
+pushScope :: Namespace f -> Namespace f
 pushScope (Namespace scopes) = Namespace $ Scope Map.empty : scopes
 
-popScope :: Namespace -> Namespace
+popScope :: Namespace f -> Namespace f
 popScope (Namespace scopes) = Namespace $ tail scopes
 
-declare :: Error m => Variable -> Namespace -> m Namespace
+declare :: Comonad f => Variable f -> Namespace f -> Either (Variable f) (Namespace f)
 declare var ns = case lookupVariable (identifier var) ns of
   Nothing -> pure $ declare_ var ns
-  Just (CurrentScope, prev) -> duplicateDefinition (locationOf var) (identifier var) (locationOf prev)
+  Just (CurrentScope, prev) -> throwError prev -- duplicate definition
   Just _ -> pure $ declare_ var ns -- TODO: warn about name shadowing
 
-declareArg :: Error m => FromSource Arg -> Namespace -> m Namespace
+declareArg :: Comonad f => f Arg -> Namespace f -> Either (Variable f) (Namespace f)
 declareArg = declare . Arg
 
-declareDefinition :: Error m => FromSource Definition -> Namespace -> m Namespace
+declareDefinition :: Comonad f => f (Definition f) -> Namespace f -> Either (Variable f) (Namespace f)
 declareDefinition = declare . Definition
 
-declare_ :: Variable -> Namespace -> Namespace
+declare_ :: Comonad f => Variable f -> Namespace f -> Namespace f
 declare_ var (Namespace []) = Namespace [Scope $ Map.insert (identifier var) var Map.empty]
 declare_ var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identifier var) var s) : ss
 
-lookupVariable :: Identifier -> Namespace -> Maybe (ScopeLevel, Variable)
+lookupVariable :: Identifier -> Namespace f -> Maybe (ScopeLevel, Variable f)
 lookupVariable _ (Namespace []) = Nothing
 lookupVariable n (Namespace (Scope s:ss)) = (CurrentScope, ) <$> Map.lookup n s <|> go ss where
   go [] = Nothing
   go [Scope s] = (TopLevel, ) <$> Map.lookup n s
   go (Scope s:ss) = (ParentScope, ) <$> Map.lookup n s <|> go ss
 
-lookupDefinition :: Identifier -> Namespace -> Maybe (FromSource Definition)
+lookupDefinition :: Identifier -> Namespace f -> Maybe (f (Definition f))
 lookupDefinition n (Namespace ss) = go ss where
   go [] = Nothing
-  go (Scope s : ss) = (Map.lookup n s >>= \case Arg _ -> Nothing; Definition def -> Just def) <|> go ss
+  go (Scope s : ss) = (Map.lookup n s >>= \case Definition def -> Just def; _ -> Nothing) <|> go ss

@@ -19,16 +19,16 @@ type Codegen = RWS () Text (Set Identifier, Set Identifier)
 execCodegen :: Set Identifier -> Codegen a -> JSRaw
 execCodegen vars m = JSRaw . snd $ evalRWS m () (empty, vars)
 
-codegen :: Module -> Text
+codegen :: Comonad f => Module f -> Text
 codegen = pack . show . codegenModule
 
-codegenModule :: Module -> JSRaw
+codegenModule :: Comonad f => Module f -> JSRaw
 codegenModule (Module defs) = codegenDefinitions $ map extract defs
 
-codegenModuleDefinitions :: Module -> Text
+codegenModuleDefinitions :: Comonad f => Module f -> Text
 codegenModuleDefinitions = codegen
 
-codegenDefinitions :: [Definition] -> JSRaw
+codegenDefinitions :: Comonad f => [Definition f] -> JSRaw
 codegenDefinitions defs = execCodegen vars $ mapAttemptM_ attemptToDefine defs where
   vars = Set.fromList $ map identifier (toList defs)
   attemptToDefine def = maybe (pure False) ((True <$) . tell) =<< definition def
@@ -45,7 +45,7 @@ deleteWhen f as = go as where
     shouldDelete <- f a
     if shouldDelete then pure as else (a:) <$> go as
 
-definition :: Definition -> Codegen (Maybe Text)
+definition :: Comonad f => Definition f -> Codegen (Maybe Text)
 definition (Definition (extract -> Identifier name) (extract -> Lambda args expr)) = do
   _2 %= delete (Identifier name)
   expr <- expression (extract expr)
@@ -64,16 +64,17 @@ definition (Definition (extract -> Identifier name) def) = do
   _2 %= delete (Identifier name)
   expr <- expression (extract def)
   pure . Just $ name <> " = " <> expr <> "\n"
-
-expression :: Expression -> Codegen Text
-expression (Literal a) = pure . pack $ show a
-expression (Reference _ (Identifier a) _ _) = pure a
-expression (Constructor (extract -> typeName) _) = do
+definition (Constructor (extract -> Identifier name) (extract -> typeName) _) = do
+  _2 %= delete (Identifier name)
   typeDefined <- uses _1 (Set.member typeName)
   unless typeDefined $ do
     _1 %= Set.insert typeName
     tell $ typeDefinition typeName
-  pure $ "new " <> identify typeName <> "()"
+  pure . Just $ name <> " = " <> "new " <> identify typeName <> "()"
+
+expression :: Comonad f => Expression f -> Codegen Text
+expression (Literal a) = pure . pack $ show a
+expression (Reference _ (Identifier a) _ _) = pure a
 expression (Lambda args expr) = do
   expr <- expression (extract expr)
   pure $

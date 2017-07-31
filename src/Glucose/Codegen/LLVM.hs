@@ -14,13 +14,10 @@ import qualified Data.Set as Set
 import Data.Text (Text, pack)
 import Data.Traversable
 import Glucose.Identifier
--- import Glucose.IR as IR
 import Glucose.IR.Checked as IR
 import LLVM.AST as LLVM
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
-
-import Debug.Trace
 
 type Codegen = Writer (Set.Set GeneratedFn)
 
@@ -30,24 +27,24 @@ win64 :: Target
 win64 = Target (DataLayout LittleEndian Windows [(LLVM.I 64, 64, Nothing)] [8,16,32,64] (Just 128))
                (Triple "x86_64" "pc" "windows")
 
-codegen :: IR.Module -> Text
+codegen :: Comonad f => IR.Module f -> Text
 codegen = pack . show . codegenModule
 
-codegenModule :: IR.Module -> LLVM.Module
+codegenModule :: Comonad f => IR.Module f -> LLVM.Module
 codegenModule (IR.Module []) = LLVM.Module win64 []
 codegenModule (IR.Module defs) = LLVM.Module win64 $ amble ++ codegenDefinitions (map extract defs)
 
-codegenModuleDefinitions :: IR.Module -> Text
+codegenModuleDefinitions :: Comonad f => IR.Module f -> Text
 codegenModuleDefinitions (IR.Module defs) = pack . concatMap show . codegenDefinitions $ map extract defs
 
-codegenDefinitions :: [IR.Definition] -> [LLVM.Global]
+codegenDefinitions :: Comonad f => [IR.Definition f] -> [LLVM.Global]
 codegenDefinitions = runCodegen . execLLVMT . mapM_ definition
 
 runCodegen :: Codegen [LLVM.Global] -> [LLVM.Global]
 runCodegen a = case runWriter a of
   (defs, toGenerate) -> map generateFunction (Set.toList toGenerate) ++ defs
 
-definition :: Definition -> LLVMT Codegen ()
+definition :: Comonad f => Definition f -> LLVMT Codegen ()
 definition (Definition (extract -> Identifier n) def) = let name = mkName n in
   mapLLVMT (withNewScope name) $ case extract def of
     Reference Global (Identifier to) rep _ -> alias name (GlobalReference (mkName to) $ llvmType rep) (llvmType rep)
@@ -55,6 +52,8 @@ definition (Definition (extract -> Identifier n) def) = let name = mkName n in
       let llvmArgs = map (argument . extract) args
       void $ defineFunction name External llvmArgs (ret =<< expression (extract expr))
     _ -> void $ defineVariable name External $ expression (extract def)
+definition (Constructor (extract -> Identifier n) _ index) = let name = mkName n in
+  void $ defineVariable name External (pure $ i32 index)
 
 defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
 defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
@@ -66,22 +65,15 @@ defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs =
     argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, integer arity i]
     let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
     ret =<< call fn args
+defineWrapper _ = error "Can only define wrappers for global functions!"
 
 slowName :: Name -> Name
 slowName (Name n) = Name $ n <> "$$"
 
-tagFunction :: LLVM.Expression -> LLVM.Expression
-tagFunction = id
--- tagFunction f = case LLVM.typeOf f of
---   Ptr (LLVM.Function _ args) ->
---     -- Uses 'add' to simplify with 'sub' in apply functions ('or' and 'and' doesn't appear to)
---     ConstConvert IntToPtr (ConstBinaryOp Add (ConstConvert PtrToInt f size) (integer size $ length args)) box
---   _ -> f
-
 argument :: IR.Arg -> LLVM.Arg
 argument (IR.Arg (Identifier name) ty) = LLVM.Arg (mkName name) (llvmType ty)
 
-expression :: IR.Expression -> LLVM LLVM.Expression
+expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
 expression (Reference Local (Identifier (mkName -> name)) rep _) = pure $ LLVM.LocalReference name (llvmType rep)
 expression (Reference Global (Identifier (mkName -> name)) rep _) =
@@ -89,25 +81,24 @@ expression (Reference Global (Identifier (mkName -> name)) rep _) =
    in case rep of
         IR.Function{} -> pure ref
         _ -> load ref
-expression (Constructor _ index) = pure $ i32 index
 expression (Lambda args def) = withNewGlobal $ \name -> buildLambda name Private (map extract args) (extract def)
 expression (Apply (extract -> f) (extract -> args)) = case flattenApply f args of
   Application rep root calls partial -> maybe full partialApply partial where
     full = do
       fn <- expression root
-      foldlM genCall fn . traced logCalls $ callsWithTypes rep (IR.typeOf root) calls
+      foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
 
-traced :: (a -> String) -> a -> a
-traced f a = trace (f a) a
+-- traced :: (a -> String) -> a -> a
+-- traced f a = trace (f a) a
 
-logCalls :: [([IR.Expression], IR.Type, IR.Type)] -> String
-logCalls = foldMap $ \(args, rep, ty) -> "[" ++ show rep ++ " <as> " ++ show ty ++ "](" ++ intercalate ", " (map show args) ++ ")\n"
+-- logCalls :: [([IR.Expression f], IR.Type, IR.Type)] -> String
+-- logCalls = foldMap $ \(args, rep, ty) -> "[" ++ show rep ++ " <as> " ++ show ty ++ "](" ++ intercalate ", " (map show args) ++ ")\n"
 
-callsWithTypes :: IR.Type -> IR.Type -> [[IR.Expression]] -> [([IR.Expression], IR.Type, IR.Type)]
+callsWithTypes :: IR.Type -> IR.Type -> [[IR.Expression f]] -> [([IR.Expression f], IR.Type, IR.Type)]
 callsWithTypes rep ty calls = zip3 calls (map fst foo) (map snd foo) where
   foo = scanl (uncurry applicationResult) (rep, ty) calls
 
-buildLambda :: Name -> Linkage -> [IR.Arg] -> IR.Expression -> LLVM LLVM.Expression
+buildLambda :: Comonad f => Name -> Linkage -> [IR.Arg] -> IR.Expression f -> LLVM LLVM.Expression
 buildLambda name linkage args def = do
   let captured = map argument $ Set.toList (captures def) \\ args
   let fnArgs = captured ++ map argument args
@@ -141,10 +132,10 @@ buildClosure narity f args = do
     store arg =<< getelementptr pclosure [i64 0, i32 5, integer arity i]
   pure ptr
 
-partialApply :: Partial -> LLVM LLVM.Expression
+partialApply :: Partial f -> LLVM LLVM.Expression
 partialApply _ = undefined -- TODO: partial application
 
-genCall :: LLVM.Expression -> ([IR.Expression], IR.Type, IR.Type) -> LLVM LLVM.Expression
+genCall :: Comonad f => LLVM.Expression -> ([IR.Expression f], IR.Type, IR.Type) -> LLVM LLVM.Expression
 genCall fn (params, llvmType -> rep, llvmType -> ty) = do
   ssaArgs <- zipWithM asArg (LLVM.argTypes rep) =<< traverse expression params
   case rep of
@@ -194,7 +185,7 @@ repType :: IR.Type -> IR.Type -> IR.Type
 repType Bound{} ty = ty
 repType rep _ = rep
 
-applicationResult :: IR.Type -> IR.Type -> [IR.Expression] -> (IR.Type, IR.Type)
+applicationResult :: IR.Type -> IR.Type -> [IR.Expression f] -> (IR.Type, IR.Type)
 applicationResult = go where
   go rep ty [] = (repType rep ty, ty)
   go rep ty (_:as) = applicationResult (IR.returnType $ repType rep ty) (IR.returnType ty) as

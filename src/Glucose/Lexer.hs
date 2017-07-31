@@ -2,27 +2,28 @@ module Glucose.Lexer (tokens, tokenise) where
 
 import Control.Comonad
 import Control.Lens
+import Control.Monad.Except
 import Control.Monad.RWS
 import Data.Char
 import Data.Foldable
 import Data.Maybe
 import Data.Text (Text, pack, unpack)
 
-import Glucose.Error hiding (unexpected)
-import qualified Glucose.Error as Error
 import Glucose.Lexer.Char
 import Glucose.Lexer.NumericLiteral
+import Glucose.Lexer.SyntaxError
 import Glucose.Source
 import Glucose.Token
 
 type Tokenised = (Location, [FromSource Token])
 
-tokens :: Text -> Either CompileError [Token]
+-- | Perform lexical analysis, splitting UTF8 text into tokens.
+tokens :: MonadError SyntaxError m => Text -> m [Token]
 tokens input = map extract . extract <$> tokenise input
 
 -- | Perform lexical analysis, splitting UTF8 text into tokens.
 -- Evaluates to a list of tokens, each associated with a range of characters, paired with the location of EOF.
-tokenise :: Error m => Text -> m Tokenised
+tokenise :: MonadError SyntaxError m => Text -> m Tokenised
 tokenise = runLexer . traverse_ consume . unpack
 
 data PartialLexeme
@@ -48,16 +49,16 @@ _partial = lens partial (\lexer partial' -> lexer { partial = partial' })
 
 type Lex m a = RWST () [FromSource Token] Lexer m a
 
-runLexer :: Error m => Lex m () -> m Tokenised
+runLexer :: MonadError SyntaxError m => Lex m () -> m Tokenised
 runLexer l = (_1 %~ pos) <$> execRWST (l *> completeLexeme Nothing) () initLexer
 
-consume :: Error m => Char -> Lex m ()
+consume :: MonadError SyntaxError m => Char -> Lex m ()
 consume c = consumeChar c *> (_pos %= updateLocation c)
 
-consumeChar :: Error m => Char -> Lex m ()
+consumeChar :: MonadError SyntaxError m => Char -> Lex m ()
 consumeChar c = maybe (completeLexeme $ Just c) (_partial .=) =<< maybeAppend c =<< gets partial
 
-maybeAppend :: Error m => Char -> PartialLexeme -> Lex m (Maybe PartialLexeme)
+maybeAppend :: MonadError SyntaxError m => Char -> PartialLexeme -> Lex m (Maybe PartialLexeme)
 maybeAppend c StartOfLine | isNewline c = pure $ Just StartOfLine
 maybeAppend c StartOfLine | isSpace c = pure $ Just Indentation
 maybeAppend c Indentation | isNewline c = pure $ Just StartOfLine
@@ -72,7 +73,7 @@ maybeAppend c (NumericLiteral lit) = do
   where nextLexemeOrError = Nothing <$ when (isIdentifier c) (unexpectedChar c "in numeric literal")
 maybeAppend _ _ = pure Nothing
 
-startingWith :: Error m => Char -> Lex m PartialLexeme
+startingWith :: MonadError SyntaxError m => Char -> Lex m PartialLexeme
 startingWith '\\' = pure $ Token BeginLambda
 startingWith '(' = pure $ Token OpenParen
 startingWith ')' = pure $ Token CloseParen
@@ -83,7 +84,7 @@ startingWith c | isIdentifier c = pure $ PartialIdentifier [c]
 startingWith c | isOperator c = pure $ PartialOperator [c]
 startingWith c = unexpectedChar c "in input"
 
-completeLexeme :: Error m => Maybe Char -> Lex m ()
+completeLexeme :: MonadError SyntaxError m => Maybe Char -> Lex m ()
 completeLexeme nextChar = gets partial >>= \case
   EOF -> error "Still lexing after eof!"
   StartOfLine -> unless (isNothing nextChar) $ implicitEndOfDefinition *> nextLexeme nextChar
@@ -113,15 +114,15 @@ completeLexeme nextChar = gets partial >>= \case
             _pos %= updateLocation lc
             consumeChar nc
 
-locateError :: Error m => Lex (Either ErrorDetails) a -> Lex m a
-locateError m = gets pos >>= \loc -> mapRWST (either (throwError . CompileError loc) pure) m
+locateError :: MonadError SyntaxError m => Lex (Either SyntaxErrorDetails) a -> Lex m a
+locateError m = gets pos >>= \loc -> mapRWST (either (throwError . Located loc) pure) m
 
 implicitEndOfDefinition :: Monad m => Lex m ()
 implicitEndOfDefinition = do
   start <- gets lexemeStart
   when (start /= beginning) $ tellToken start start EndOfDefinition
 
-tellLexeme :: Error m => Maybe Char -> Token -> Lex m ()
+tellLexeme :: MonadError SyntaxError m => Maybe Char -> Token -> Lex m ()
 tellLexeme nextChar token = do
   Lexer { lexemeStart, pos } <- get
   tellToken lexemeStart pos token
@@ -130,7 +131,7 @@ tellLexeme nextChar token = do
 tellToken :: Monad m => Location -> Location -> Token -> Lex m ()
 tellToken start after token = tell [FromSource (SourceRange start $ rewind after) token]
 
-nextLexeme :: Error m => Maybe Char -> Lex m ()
+nextLexeme :: MonadError SyntaxError m => Maybe Char -> Lex m ()
 nextLexeme nextChar =  do
   partial' <- maybe (pure EOF) startingWith nextChar
   modify $ \lexer -> lexer { partial = partial', lexemeStart = pos lexer, inDefinition = True }
@@ -138,8 +139,11 @@ nextLexeme nextChar =  do
 
 -- * Error messages
 
-unexpected :: Error m => String -> String -> Lex m a
-unexpected u s = gets pos >>= \loc -> Error.unexpected loc u s
+syntaxError :: MonadError SyntaxError m => Text -> Text -> Lex m a
+syntaxError message context = gets pos >>= \loc -> throwError . Located loc $ SyntaxError message context
 
-unexpectedChar :: Error m => Char -> String -> Lex m a
+unexpected :: MonadError SyntaxError m => String -> Text -> Lex m a
+unexpected u = syntaxError ("unexpected " <> pack u)
+
+unexpectedChar :: MonadError SyntaxError m => Char -> Text -> Lex m a
 unexpectedChar c = unexpected (show c)

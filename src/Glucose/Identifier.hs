@@ -25,7 +25,7 @@ instance Bound Identifier where
 instance Bound a => Bound (FromSource a) where
   identifier = identifier . extract
 
-bindings :: (Monad m, Bound a) => (a -> a -> m (Map Identifier a)) -> [a] -> m (Map Identifier a)
-bindings onDuplicate defs = go defs Map.empty where
+bindings :: Monad m => (a -> a -> m (Map Identifier a)) -> (a -> Identifier) -> [a] -> m (Map Identifier a)
+bindings onDuplicate identify defs = go defs Map.empty where
   go [] = pure
-  go (def:defs) = go defs <=< insertOr (identifier def) def (onDuplicate def)
+  go (def:defs) = go defs <=< insertOr (identify def) def (onDuplicate def)

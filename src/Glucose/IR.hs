@@ -4,21 +4,20 @@ module Glucose.IR where
 import Control.Comonad
 import Data.List
 import Glucose.Identifier
-import Glucose.Source
 
-newtype Module ann = Module [FromSource (Definition ann)]
-deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Module ann)
+newtype Module ann f = Module [f (Definition ann f)]
+deriving instance (Eq (f (Definition ann f))) => Eq (Module ann f)
 
-data Definition ann = Definition (FromSource Identifier) (FromSource (Expression ann))
-deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Definition ann)
+data Definition ann f = Definition (f Identifier) (f (Expression ann f))
+                      | Constructor (f Identifier) (f Identifier) Int
+deriving instance (Eq (f Identifier), Eq (f (Expression ann f))) => Eq (Definition ann f)
 
-data Expression ann
+data Expression ann f
   = Literal Literal
   | Reference (RefKind ann) Identifier (Type ann) (Type ann)
-  | Constructor (FromSource Identifier) Int -- TODO: does not belong
-  | Lambda [FromSource (Arg ann)] (FromSource (Expression ann))
-  | Apply (FromSource (Expression ann)) (FromSource (Expression ann))
-deriving instance (Eq (Type ann), Eq (RefKind ann)) => Eq (Expression ann)
+  | Lambda [f (Arg ann)] (f (Expression ann f))
+  | Apply (f (Expression ann f)) (f (Expression ann f))
+deriving instance (Eq (Type ann), Eq (RefKind ann), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq)
 
@@ -42,24 +41,23 @@ argTypes _ = []
 
 -- * Show instances
 
-instance Annotations ann => Show (Module ann) where
+instance (Comonad f, Annotations ann) => Show (Module ann f) where
   show (Module defs) = intercalate "\n\n" $ map (show . extract) defs
 
-instance Annotations ann => Show (Definition ann) where
+instance (Comonad f, Annotations ann) => Show (Definition ann f) where
   show (Definition name value) =
     let n = show $ extract name
         declaration = n `withType` (typeOf (extract value) :: Type ann)
-        definition = show name ++ " = " ++ show value
-        -- definition = show (extract name) ++ " = " ++ show (extract value)
+        definition = show (extract name) ++ " = " ++ show (extract value)
      in if declaration == n
           then definition
           else declaration ++ "\n" ++ definition
+  show (Constructor name typeName id) = show (extract name) ++ " = " ++ show (extract typeName) ++ "#" ++ show id
 
-instance Annotations ann => Show (Expression ann) where
+instance (Comonad f, Annotations ann) => Show (Expression ann f) where
   show (Literal lit) = show lit `withType` (typeOf lit :: Type ann)
   show (Reference kind name rep ty) = (show name `withRefKind` kind) `withType` ty `withType` rep -- TODO: include arity
-  show (Constructor typeName id) = show typeName ++ "#" ++ show id
-  show (Lambda args value) = "\\" ++ unwords (map (show.extract) args) ++ " -> " ++ show (extract value)
+  show (Lambda args value) = "\\" ++ unwords (map (show . extract) args) ++ " -> " ++ show (extract value)
   show (Apply expr arg) = show (extract expr) ++ " (" ++ show (extract arg) ++ ")"
 
 instance Annotations ann => Show (Arg ann) where
@@ -74,18 +72,18 @@ instance Show Literal where
 class Annotations ann => Typed a ann where
   typeOf :: a -> Type ann
 
-instance Annotations ann => Typed (Definition ann) ann where
-  typeOf (Definition _ (FromSource _ e)) = typeOf e
+instance (Comonad f, Annotations ann) => Typed (Definition ann f) ann where
+  typeOf (Definition _ e) = typeOf $ extract e
+  typeOf (Constructor _ typeName _) = mkADT (extract typeName)
 
-instance Annotations ann => Typed (Expression ann) ann where
+instance (Comonad f, Annotations ann) => Typed (Expression ann f) ann where
   typeOf (Literal a) = typeOf a
   typeOf (Reference _ _ _ ty) = ty
-  typeOf (Constructor typeName _) = mkADT (extract typeName)
   typeOf (Lambda args expr) = go n args where
     go _ [] = typeOf $ extract expr
     go m (a:as) = funType (Arity m) (typeOf $ extract a) $ go (m-1) as
     n = length args
-  typeOf (Apply f _) = returnType (typeOf f)
+  typeOf (Apply f _) = returnType (typeOf $ extract f)
 
 instance Annotations ann => Typed Literal ann where
   typeOf (IntegerLiteral _) = intType
@@ -94,13 +92,14 @@ instance Annotations ann => Typed Literal ann where
 instance Annotations ann => Typed (Arg ann) ann where
   typeOf (Arg _ ty) = ty
 
-instance Typed a ann => Typed (FromSource a) ann where
-  typeOf (FromSource _ a) = typeOf a
+-- instance (Comonad f, Typed a ann) => Typed (f a) ann where
+--   typeOf = typeOf . extract
 
 -- * Bound instances
 
-instance Bound (Definition ann) where
-  identifier (Definition (extract -> name) _) = name
+instance Comonad f => Bound (Definition ann f) where
+  identifier (Definition name _) = extract name
+  identifier (Constructor name _ _) = extract name
 
 instance Bound (Arg ann) where
   identifier (Arg name _) = name

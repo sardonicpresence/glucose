@@ -1,9 +1,10 @@
 module Glucose.Lexer.Reversible where
 
+import Control.Monad.Except
 import Data.Monoid
 import Data.Text as Text
-import Glucose.Error
 import Glucose.Lexer
+import Glucose.Lexer.SyntaxError
 import Glucose.Source
 import Glucose.Token
 
@@ -17,7 +18,7 @@ data TokenisedReversible = TokenisedReversible Whitespace [ReversibleToken] deri
 data ReversibleToken = ReversibleToken { token :: Token, location :: Location, lexeme :: Text, leadingSpace :: Text }
   deriving (Eq, Show)
 
-tokeniseReversible :: Text -> Either CompileError (Location, TokenisedReversible)
+tokeniseReversible :: MonadError SyntaxError m => Text -> m (Location, TokenisedReversible)
 tokeniseReversible input = fmap fromTokens <$> tokenise input where
   fromTokens = uncurry TokenisedReversible . go 0 input where
     go _ remainder [] = (Whitespace remainder, [])
