@@ -44,10 +44,10 @@ completeNumericLiteral (NumericLiteral n (DP dp) NoExponent) = purely $ FloatLit
 completeNumericLiteral (NumericLiteral n (DP dp) (Exponent e)) = purely $ FloatLiteral $ fromInteger n * 10.0^^e / 10^dp
 completeNumericLiteral (NumericLiteral _ NoDP (Exponent _)) = negativeExponent
 completeNumericLiteral (NumericLiteral _ NoDP Negative) = negativeExponent
-completeNumericLiteral _ = throwError $ SyntaxError "missing exponent" "numeric literal"
+completeNumericLiteral _ = throwError $ SyntaxErrorDetails "missing exponent" "numeric literal"
 
 purely :: Applicative f => a -> f (a, Maybe b)
 purely a = pure (a, Nothing)
 
 negativeExponent :: MonadError SyntaxErrorDetails m => m a
-negativeExponent = throwError $ SyntaxError "negative exponent" "integer literal"
+negativeExponent = throwError $ SyntaxErrorDetails "negative exponent" "integer literal"

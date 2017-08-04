@@ -3,6 +3,9 @@ module Glucose.Lexer.SyntaxError where
 import Data.Text
 import Glucose.Source
 
-type SyntaxError = Located SyntaxErrorDetails
+data SyntaxError = SyntaxError Location SyntaxErrorDetails deriving (Eq)
 
-data SyntaxErrorDetails = SyntaxError { message :: Text, context :: Text }
+data SyntaxErrorDetails = SyntaxErrorDetails { message :: Text, context :: Text } deriving (Eq)
+
+instance Located SyntaxError where
+  location (SyntaxError loc _) = loc

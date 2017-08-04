@@ -27,7 +27,7 @@ parse :: MonadError ParseError m => Location -> [FromSource Token] -> m (Module 
 parse eofLocation = runParser moduleParser (onError eofLocation)
 
 onError :: Location -> EOFOr (FromSource Token) -> [EOFOr String] -> ParseError
-onError eofLocation unexpected expected = Located location $ ParseError unexpected (map (pack <$>) expected) where
+onError eofLocation unexpected expected = ParseError location $ ParseErrorDetails unexpected (map (pack <$>) expected) where
   location = maybeEOF eofLocation startLocation unexpected
 
 moduleParser :: Source f => Parse f (Module f)

@@ -34,19 +34,8 @@ rewind (Location cp line col) = Location (cp-1) line (col-1)
 
 
 -- | A value with an associated location in UTF8 text.
-data Located a = Located Location a deriving (Eq, Ord, Functor, Foldable, Traversable)
-
-location :: Located a -> Location
-location (Located loc _) = loc
-
-instance Comonad Located where
-  extract (Located _ a) = a
-  extend f x@(Located loc _) = Located loc (f x)
-
-instance Semigroup a => Semigroup (Located a) where
-  a <> b | location a > location b = a
-  a <> b | location b > location a = b
-  (Located loc a) <> (Located _ b) = Located loc (a <> b)
+class Located a where
+  location ::a -> Location
 
 
 -- | An inclusive range of characters in UTF8 text.
@@ -84,6 +73,9 @@ instance Comonad FromSource where
   extend f x@(FromSource s _) = FromSource s (f x)
 
 instance ComonadApply FromSource
+
+instance Located (FromSource a) where
+  location = startLocation
 
 startLocation :: FromSource a -> Location
 startLocation (FromSource (SourceRange start _) _) = start

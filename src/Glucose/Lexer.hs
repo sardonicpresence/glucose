@@ -115,7 +115,7 @@ completeLexeme nextChar = gets partial >>= \case
             consumeChar nc
 
 locateError :: MonadError SyntaxError m => Lex (Either SyntaxErrorDetails) a -> Lex m a
-locateError m = gets pos >>= \loc -> mapRWST (either (throwError . Located loc) pure) m
+locateError m = gets pos >>= \loc -> mapRWST (either (throwError . SyntaxError loc) pure) m
 
 implicitEndOfDefinition :: Monad m => Lex m ()
 implicitEndOfDefinition = do
@@ -140,7 +140,7 @@ nextLexeme nextChar =  do
 -- * Error messages
 
 syntaxError :: MonadError SyntaxError m => Text -> Text -> Lex m a
-syntaxError message context = gets pos >>= \loc -> throwError . Located loc $ SyntaxError message context
+syntaxError message context = gets pos >>= \loc -> throwError . SyntaxError loc $ SyntaxErrorDetails message context
 
 unexpected :: MonadError SyntaxError m => String -> Text -> Lex m a
 unexpected u = syntaxError ("unexpected " <> pack u)

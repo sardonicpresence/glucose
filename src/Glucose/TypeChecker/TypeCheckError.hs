@@ -8,3 +8,5 @@ data TypeCheckError f
   | UnrecognisedVariable (f Identifier)
   | RecursiveDefinition (f Identifier)
   | TypeMismatch (f Type) (f Type)
+
+deriving instance (Eq (f Identifier), Eq (f ()), Eq (f Type)) => Eq (TypeCheckError f)

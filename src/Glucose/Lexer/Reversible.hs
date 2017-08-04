@@ -15,8 +15,11 @@ newtype Whitespace = Whitespace Text deriving (Eq, Show)
 data TokenisedReversible = TokenisedReversible Whitespace [ReversibleToken] deriving (Eq, Show)
 
 -- | A token with sufficient context to reconstruct the original text.
-data ReversibleToken = ReversibleToken { token :: Token, location :: Location, lexeme :: Text, leadingSpace :: Text }
+data ReversibleToken = ReversibleToken { token :: Token, _location :: Location, lexeme :: Text, leadingSpace :: Text }
   deriving (Eq, Show)
+
+instance Located ReversibleToken where
+  location = _location
 
 tokeniseReversible :: MonadError SyntaxError m => Text -> m (Location, TokenisedReversible)
 tokeniseReversible input = fmap fromTokens <$> tokenise input where
