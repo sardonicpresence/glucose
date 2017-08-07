@@ -2,6 +2,7 @@ module Glucose.CompilerSpec (spec) where
 
 import Test.Prelude
 
+import Control.Comonad
 import Data.Foldable
 import Data.Monoid
 import Data.Text
@@ -36,5 +37,5 @@ spec = describe "compile" $ do
              "\x5d2_ = new \x5d1_()\n" ++
              "\x5d3 = new \x5d1_()\n")
 
-forAllOutputs :: Applicative f => (Codegen -> f a) -> f ()
+forAllOutputs :: (Comonad f, Applicative m) => (Codegen f -> m a) -> m ()
 forAllOutputs f = traverse_ (f . codegen) [LLVM, JavaScript]

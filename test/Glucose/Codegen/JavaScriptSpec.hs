@@ -3,16 +3,16 @@ module Glucose.Codegen.JavaScriptSpec (spec) where
 import Test.Prelude
 
 import Control.Comonad
+import Control.Comonad.Identity
 import Glucose.IR.Checked as IR
 import Glucose.Codegen.JavaScript hiding (codegenDefinitions)
 import qualified  Glucose.Codegen.JavaScript as JS (codegenDefinitions)
-import Glucose.Source
 import Glucose.Test.IR.Checked
 
 spec :: Spec
 spec = describe "JavaScript codegen" $ do
   it "compiles an empty module" $
-    codegenModule (Module []) `shouldShow` ""
+    codegenModule (Module [] :: Module Identity) `shouldShow` ""
   it "compiles global numeric constant definitions correctly" $
     codegenDefinitions [constantAnywhere "a" $ IR.IntegerLiteral 123,
                         constantAnywhere "b" $ IR.FloatLiteral 3.21] `shouldShow`
@@ -31,5 +31,5 @@ spec = describe "JavaScript codegen" $ do
     , "B = new test()" ]
   -- TODO: JavaScript name mangling e.g. keywords
 
-codegenDefinitions :: [FromSource Definition] -> JSRaw
+codegenDefinitions :: [Identity (Definition Identity)] -> JSRaw
 codegenDefinitions = JS.codegenDefinitions . map extract

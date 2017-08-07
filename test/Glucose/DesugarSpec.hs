@@ -5,9 +5,8 @@ import Test.Prelude
 import Control.Monad
 import Data.Text (Text)
 import Glucose.IR
+import Glucose.Compiler (tokenise, parse)
 import Glucose.Error
-import Glucose.Lexer (tokenise)
-import Glucose.Parser (parse)
 import Glucose.Source
 import Glucose.Test.IR.Unchecked
 import qualified Glucose.Desugar as Desugar
@@ -27,5 +26,5 @@ spec = describe "desugar" $ do
           , alias ("d" `at` "5:1@35-5:1@35") ("a" `at` "5:3@37-5:3@37") ]
     in desugar input `shouldBe` Right expected
 
-desugar :: Text -> Either CompileError (Module Unchecked)
+desugar :: Text -> Either CompileError (Module Unchecked FromSource)
 desugar = Desugar.desugar <=< uncurry parse <=< tokenise

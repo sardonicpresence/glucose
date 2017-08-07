@@ -4,30 +4,28 @@ import Control.Comonad
 import Data.Text (Text)
 import Glucose.Identifier (Identifier (..))
 import Glucose.IR
-import Glucose.Source
-import Glucose.Test.Source
 
 -- * Without source locations
 
-constantAnywhere :: Text -> Literal -> FromSource (Definition ann)
-constantAnywhere name lit = definitionAnywhere name (Literal lit)
+constantAnywhere :: (Applicative f, Comonad f) => Text -> Literal -> f (Definition ann f)
+constantAnywhere name lit = constant (pure name) (pure lit)
 
-constructorAnywhere :: Text -> Text -> Int -> FromSource (Definition ann)
-constructorAnywhere ty ctor index = definitionAnywhere ctor $ Constructor (anywhere $ Identifier ty) index
+constructorAnywhere :: (Applicative f, Comonad f) => Text -> Text -> Int -> f (Definition ann f)
+constructorAnywhere ty ctor = constructor (pure ty) (pure ctor)
 
-definitionAnywhere :: Text -> Expression ann -> FromSource (Definition ann)
-definitionAnywhere name value = definition (anywhere name) (anywhere value)
+definitionAnywhere :: (Applicative f, Comonad f) => Text -> Expression ann f -> f (Definition ann f)
+definitionAnywhere name value = definition (pure name) (pure value)
 
 -- * With source locations
 
-constant :: FromSource Text -> FromSource Literal -> FromSource (Definition ann)
+constant :: (Applicative f, Comonad f) => f Text -> f Literal -> f (Definition ann f)
 constant name lit = definition name (Literal <$> lit)
 
-constructor :: FromSource Text -> FromSource Text -> Int -> FromSource (Definition ann)
-constructor ty ctor index = definition ctor $ ctor $> Constructor (Identifier <$> ty) index
+constructor :: Applicative f => f Text -> f Text -> Int -> f (Definition ann f)
+constructor ty ctor index = ctor $> Constructor (Identifier <$> ctor) (Identifier <$> ty) index
 
-definition :: FromSource Text -> FromSource (Expression ann) -> FromSource (Definition ann)
+definition :: (Applicative f, Comonad f) => f Text -> f (Expression ann f) -> f (Definition ann f)
 definition name value = Definition <$> duplicate (Identifier <$> name) <*> duplicate value
 
-reference :: RefKind ann -> FromSource Text -> Type ann -> FromSource (Expression ann)
+reference :: Functor f => RefKind ann -> f Text -> Type ann -> f (Expression ann f)
 reference kind name ty = (\n -> Reference kind (Identifier n) ty ty) <$> name

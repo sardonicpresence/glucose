@@ -2,13 +2,13 @@ module Glucose.Test.IR.Checked (module Glucose.Test.IR.Core, alias, aliasAnywher
 
 import Glucose.Test.IR.Core
 
+import Control.Comonad
 import Data.Text
 import Glucose.Identifier
 import Glucose.IR
-import Glucose.Source
 
-alias :: FromSource Text -> FromSource Text -> Type Checked -> FromSource (Definition Checked)
+alias :: (Comonad f, Applicative f) => f Text -> f Text -> Type Checked -> f (Definition Checked f)
 alias to from ty = definition to $ reference Global from ty
 
-aliasAnywhere :: Text -> Text -> Type Checked -> FromSource (Definition Checked)
+aliasAnywhere :: (Comonad f, Applicative f) => Text -> Text -> Type Checked -> f (Definition Checked f)
 aliasAnywhere to from ty = definitionAnywhere to $ Reference Global (Identifier from) ty ty

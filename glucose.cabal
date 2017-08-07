@@ -107,7 +107,6 @@ test-suite glucose-test
                      , Glucose.Codegen.JavaScriptSpec
                      , Glucose.Codegen.LLVMSpec
                      , Glucose.Test.AST
-                     , Glucose.Test.Error
                      , Glucose.Test.IR.Core
                      , Glucose.Test.IR.Checked
                      , Glucose.Test.IR.Unchecked

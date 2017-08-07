@@ -5,6 +5,7 @@ import Control.Monad.Except
 import Control.Lens
 import Control.Monad.State
 import Data.Map.Strict as Map
+import Data.Map.Utils as Map
 import Data.Set as Set
 
 import Glucose.Desugar
@@ -18,13 +19,16 @@ import Glucose.VarGen
 
 data TypeChecker f = TypeChecker
   { namespace :: Namespace f
-  , constructors :: Set (Identifier, Int)
+  , constructors :: Map (Identifier, Int) (f Identifier)
   , checking :: Set Identifier
   , nextVar :: VarGen
   , unchecked :: Map Identifier (Desugared f Definition) }
 
 _namespace :: Lens' (TypeChecker f) (Namespace f)
 _namespace = lens namespace (\a b -> a { namespace = b })
+
+_constructors :: Lens' (TypeChecker f) (Map (Identifier, Int) (f Identifier))
+_constructors = lens constructors (\a b -> a { constructors = b })
 
 _checking :: Lens' (TypeChecker f) (Set Identifier)
 _checking = lens checking (\a b -> a { checking = b })
@@ -33,8 +37,9 @@ _nextVar :: Lens' (TypeChecker f) VarGen
 _nextVar = lens nextVar (\a b -> a { nextVar = b})
 
 mkTypeChecker :: (Comonad f, MonadError (TypeCheckError f) m) => [Desugared f Definition] -> m (TypeChecker f)
-mkTypeChecker = (TypeChecker emptyNamespace Set.empty Set.empty mkVarGen <$>) . bindings reportDuplicate (identifier . extract) where
-  reportDuplicate def = throwError . DuplicateDefinition (identifier <$> def) . void
+mkTypeChecker defs = do
+  unchecked <- bindings duplicateDefinition (identify . extract) defs
+  pure $ TypeChecker emptyNamespace Map.empty Set.empty mkVarGen unchecked
 
 push :: MonadError (TypeCheckError f) m => Identifier -> TypeCheck f m ()
 push name = _checking %= Set.insert name
@@ -55,21 +60,19 @@ define name value = do
   put tc { namespace = namespace', unchecked = Map.delete name unchecked, checking = Set.delete name checking }
   pure value
 
-handleDuplicate :: (Bound a, Functor f, MonadError (TypeCheckError f) m) => f a -> Either (Variable f) (Namespace f) -> m (Namespace f)
-handleDuplicate a = either (throwError . DuplicateDefinition (identifier <$> a) . existing) pure where
-  existing (NS.Arg a) = void a
-  existing (NS.Definition a) = void a
+handleDuplicate :: (Comonad f, Bound f (f a), MonadError (TypeCheckError f) m) => f a -> Either (Variable f) (Namespace f) -> m (Namespace f)
+handleDuplicate a = either (duplicateDefinition a) pure
 
 type TypeCheck f m a = StateT (TypeChecker f) m a
 
 typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Unchecked f -> m (Module Checked f)
 typeCheck (Module defs) = Module <$> (evalStateT (traverse go defs) =<< mkTypeChecker defs) where
   go def = do
-    existing <- gets $ lookupDefinition (identifier $ extract def) . namespace
+    existing <- gets $ lookupDefinition (identify $ extract def) . namespace
     maybe (typeCheckDefinition def) pure existing
 
 typeCheckDefinition :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => f (Definition Unchecked f) -> TypeCheck f m (f (Definition Checked f))
-typeCheckDefinition def = define (identifier $ extract def) =<< traverse go def where
+typeCheckDefinition def = define (identify $ extract def) =<< traverse go def where
   go (Definition name value) = do
     recursive <- gets $ elem (extract name) . checking
     when recursive $ throwError $ RecursiveDefinition name
@@ -77,10 +80,8 @@ typeCheckDefinition def = define (identifier $ extract def) =<< traverse go def 
     _nextVar .= mkVarGen
     Definition name <$> traverse typeCheckExpression (duplicate value)
   go (Constructor name typeName index) = do
-    -- TODO: check for duplicate types (constructors)
-    -- tc@TypeChecker{namespace,constructors,unchecked} <- get
-    -- let key = (extract typeName, index)
-    -- when (Set.member key constructors) $ throwError . DuplicateDefinition (Definition def)
+    let key = (extract typeName, index)
+    _constructors <~ (Map.insertOr key typeName (duplicateDefinition typeName) =<< use _constructors)
     pure $ Constructor name typeName index
 
 typeCheckExpression :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => f (Expression Unchecked f) -> TypeCheck f m (Expression Checked f)
@@ -104,7 +105,7 @@ typeCheckExpression expr = case extract expr of
     pure $ Apply (f <$> expr') (g <$> arg')
 
 typeCheckIdentifier :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => f Identifier -> TypeCheck f m (Expression Checked f)
-typeCheckIdentifier variable = gets unchecked >>= \ns -> case Map.lookup (identifier $ extract variable) ns of
+typeCheckIdentifier variable = gets unchecked >>= \ns -> case Map.lookup (extract variable) ns of
   Nothing -> throwError $ UnrecognisedVariable variable
   Just def -> referenceTo =<< extract <$> typeCheckDefinition def
 
@@ -142,7 +143,7 @@ referenceArg :: Arg Checked -> Expression Checked f
 referenceArg (Arg name ty) = Reference Local name ty ty
 
 referenceTo :: (Comonad f, Monad m) => Definition Checked f -> TypeCheck f m (Expression Checked f)
-referenceTo def = freeTypes newVar $ Reference Global (identifier def) (typeOf def) (typeOf def)
+referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def) (typeOf def)
 
--- valueOf :: Comonad f => Definition Checked f -> Expression Checked f
--- valueOf (Definition _ value) = extract value
+duplicateDefinition :: (Functor f, Bound f a, Bound f b, MonadError (TypeCheckError f) m) => a -> b -> m c
+duplicateDefinition new existing = throwError $ DuplicateDefinition (identifier new) (void $ identifier existing)

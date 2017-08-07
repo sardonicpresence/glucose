@@ -1,6 +1,5 @@
 module Test.Utils where
 
-import Glucose.Error
 import Test.Hspec hiding (shouldBe)
 
 infixr 1 `shouldBe`, `shouldErrorContaining`, `shouldErrorWith`, `shouldShow`
@@ -11,7 +10,7 @@ shouldErrorContaining (Right a) _ = expectationFailure $ "did not fail, returned
 shouldErrorContaining (Left e) s = show e `shouldContain` s
 
 {-# INLINE shouldErrorWith #-}
-shouldErrorWith :: Show a => Either CompileError a -> CompileError -> Expectation
+shouldErrorWith :: (Eq e, Show e, Show a) => Either e a -> e -> Expectation
 shouldErrorWith (Right a) _ = expectationFailure $ "did not fail, returned:" ++ formatResult a
 shouldErrorWith (Left a) e = a `shouldBe` e
 
@@ -19,6 +18,7 @@ shouldErrorWith (Left a) e = a `shouldBe` e
 shouldShow :: Show a => a -> String -> Expectation
 shouldShow a b = show a `shouldBe` b
 
+{-# INLINE shouldBe #-}
 shouldBe :: (Eq a, Show a) => a -> a -> Expectation
 shouldBe a e | a == e = pure ()
 shouldBe a e = expectationFailure $ "expected:" ++ formatResult e ++ "\nbut got: " ++ formatResult a
@@ -27,3 +27,6 @@ formatResult :: Show a => a -> String
 formatResult a = if '\n' `elem` show a
   then "\n" ++ show a
   else " " ++ show a
+
+failOnError :: (Show e, Applicative f) => Either e a -> f a
+failOnError = either (error . show) pure

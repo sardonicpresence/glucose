@@ -18,8 +18,8 @@ type Definition = IR.Definition IR.Checked
 
 data Variable f = Arg (f Arg) | Definition (f (Definition f))
 
-instance Comonad f => Bound (Variable f) where
-  identifier (Arg arg) = identifier $ extract arg
+instance Comonad f => Bound f (Variable f) where
+  identifier (Arg arg) = identifier arg
   identifier (Definition def) = identifier $ extract def
 
 newtype Scope f = Scope (Map Identifier (Variable f))
@@ -38,7 +38,7 @@ popScope :: Namespace f -> Namespace f
 popScope (Namespace scopes) = Namespace $ tail scopes
 
 declare :: Comonad f => Variable f -> Namespace f -> Either (Variable f) (Namespace f)
-declare var ns = case lookupVariable (identifier var) ns of
+declare var ns = case lookupVariable (identify var) ns of
   Nothing -> pure $ declare_ var ns
   Just (CurrentScope, prev) -> throwError prev -- duplicate definition
   Just _ -> pure $ declare_ var ns -- TODO: warn about name shadowing
@@ -50,8 +50,8 @@ declareDefinition :: Comonad f => f (Definition f) -> Namespace f -> Either (Var
 declareDefinition = declare . Definition
 
 declare_ :: Comonad f => Variable f -> Namespace f -> Namespace f
-declare_ var (Namespace []) = Namespace [Scope $ Map.insert (identifier var) var Map.empty]
-declare_ var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identifier var) var s) : ss
+declare_ var (Namespace []) = Namespace [Scope $ Map.insert (identify var) var Map.empty]
+declare_ var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identify var) var s) : ss
 
 lookupVariable :: Identifier -> Namespace f -> Maybe (ScopeLevel, Variable f)
 lookupVariable _ (Namespace []) = Nothing

@@ -1,3 +1,4 @@
+{-# LANGUAGE FunctionalDependencies #-}
 module Glucose.Identifier where
 
 import Control.Comonad
@@ -6,9 +7,8 @@ import Data.Map as Map
 import Data.Map.Utils
 import Data.String
 import Data.Text
-import Glucose.Source
 
-newtype Identifier = Identifier { identify :: Text } deriving (Eq, Ord)
+newtype Identifier = Identifier Text deriving (Eq, Ord)
 
 instance Show Identifier where
   show (Identifier n) = unpack n
@@ -16,14 +16,14 @@ instance Show Identifier where
 instance IsString Identifier where
   fromString = Identifier . pack
 
-class Bound a where
-  identifier :: a -> Identifier
+class Bound f a | a -> f where
+  identifier :: a -> f Identifier
 
-instance Bound Identifier where
+instance Bound f (f Identifier) where
   identifier = id
 
-instance Bound a => Bound (FromSource a) where
-  identifier = identifier . extract
+identify :: (Comonad f, Bound f a) => a -> Identifier
+identify = extract . identifier
 
 bindings :: Monad m => (a -> a -> m (Map Identifier a)) -> (a -> Identifier) -> [a] -> m (Map Identifier a)
 bindings onDuplicate identify defs = go defs Map.empty where

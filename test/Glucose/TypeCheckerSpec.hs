@@ -7,13 +7,11 @@ import Data.Text (Text)
 import Glucose.Identifier
 import Glucose.IR
 import Glucose.Error
-import Glucose.Lexer (tokenise)
-import Glucose.Parser (parse)
+import Glucose.Compiler (tokenise, parse, desugar)
+import qualified Glucose.Compiler as TC (typeCheck)
 import Glucose.Source
-import Glucose.Desugar (desugar)
-import Glucose.Test.Error
 import Glucose.Test.IR.Checked
-import qualified Glucose.TypeChecker as TC
+import Glucose.TypeChecker.TypeCheckError
 
 spec :: Spec
 spec = describe "typeCheck" $ do
@@ -31,19 +29,25 @@ spec = describe "typeCheck" $ do
     in typeCheck input `shouldBe` Right expected
   it "fails a module with duplicate variable definitions" $
     let input = "a=1\nb=2\na=3"
-    in typeCheck input `shouldErrorWith` compileError "3:1@8" (DuplicateDefinition (Identifier "a") (read "1:1@0"))
+    in typeCheck input `shouldErrorWith` duplicateDefinition "3:1@8-3:1@8" "a" "1:1@0-1:1@0"
   it "fails a module with duplicate constructor definitions" $
     let input = "type A=a\ntype B=a|b"
-    in typeCheck input `shouldErrorWith` compileError "2:8@16" (DuplicateDefinition (Identifier "a") (read "1:8@7"))
+    in typeCheck input `shouldErrorWith` duplicateDefinition "2:8@16-2:8@16" "a" "1:8@7-1:8@7"
   it "fails a module with conflicting variable and constructor definitions" $
     let input = "type A=a|b\nb=1"
-    in typeCheck input `shouldErrorWith` compileError "2:1@11" (DuplicateDefinition (Identifier "b") (read "1:10@9"))
+    in typeCheck input `shouldErrorWith` duplicateDefinition "2:1@11-2:1@11" "b" "1:10@9-1:10@9"
   it "fails a module with duplicate type names" $
     let input = "type A=a\ntype A=b"
-    in typeCheck input `shouldErrorWith` compileError "2:6@14" (DuplicateDefinition (Identifier "A") (read "1:6@5"))
+    in typeCheck input `shouldErrorWith` duplicateDefinition "2:6@14-2:6@14" "A" "1:6@5-1:6@5"
   it "fails a module with recursive definitions" $
     let input = "a=c\nb=66\nc=d\nd=a"
-    in typeCheck input `shouldErrorWith` compileError "1:1@0" (RecursiveDefinition (Identifier "a"))
+    in typeCheck input `shouldErrorWith` recursiveDefinition "1:1@0-1:1@0" "a"
 
-typeCheck :: Text -> Either CompileError (Module Checked)
+typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
+
+duplicateDefinition :: String -> Text -> String -> CompileError
+duplicateDefinition loc name prev = TypeCheckError $ DuplicateDefinition (Identifier name `at` loc) (() `at` prev)
+
+recursiveDefinition :: String -> Text -> CompileError
+recursiveDefinition loc name = TypeCheckError $ RecursiveDefinition $ Identifier name `at` loc

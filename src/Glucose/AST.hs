@@ -14,9 +14,9 @@ data Definition f = Definition (f Identifier) (f (Expression f)) (Maybe (f Type)
 deriving instance (Eq (f (Expression f)), Eq (f Identifier), Eq (f Type)) => Eq (Definition f)
 deriving instance (Show (f (Expression f)), Show (f Identifier), Show (f Type)) => Show (Definition f)
 
-instance Comonad f => Bound (Definition f) where
-  identifier (Definition name _ _) = extract name
-  identifier (TypeDefinition name _) = extract name
+instance Comonad f => Bound f (Definition f) where
+  identifier (Definition name _ _) = name
+  identifier (TypeDefinition name _) = name
 
 data Value f
   = Literal Literal

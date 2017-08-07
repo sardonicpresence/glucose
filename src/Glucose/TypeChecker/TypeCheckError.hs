@@ -10,3 +10,4 @@ data TypeCheckError f
   | TypeMismatch (f Type) (f Type)
 
 deriving instance (Eq (f Identifier), Eq (f ()), Eq (f Type)) => Eq (TypeCheckError f)
+deriving instance (Show (f Identifier), Show (f ()), Show (f Type)) => Show (TypeCheckError f)

@@ -6,10 +6,10 @@ import Glucose.Parser.EOFOr
 import Glucose.Source
 import Glucose.Token
 
-data ParseError = ParseError Location ParseErrorDetails deriving (Eq)
+data ParseError = ParseError Location ParseErrorDetails deriving (Eq, Show)
 
 data ParseErrorDetails = ParseErrorDetails { unexpected :: EOFOr (FromSource Token), expected :: [EOFOr Text] }
-  deriving (Eq)
+  deriving (Eq, Show)
 
 instance Semigroup ParseError where
   a <> b | location a > location b = a

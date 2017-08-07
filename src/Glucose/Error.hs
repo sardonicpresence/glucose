@@ -1,4 +1,4 @@
-module Glucose.Error (CompileError, liftErrors, formatError) where
+module Glucose.Error (CompileError(..), liftErrors, formatError) where
 
 import Control.Comonad
 import Control.Monad.Except
@@ -18,7 +18,7 @@ data CompileError
   = SyntaxError Lexer.SyntaxError
   | ParseError Parser.ParseError
   | TypeCheckError (TypeChecker.TypeCheckError FromSource)
-  deriving (Eq)
+  deriving (Eq, Show)
 
 liftErrors :: (ErrorDetails e, MonadError CompileError m) => Either e a -> m a
 liftErrors = either (throwError . toCompileError) pure

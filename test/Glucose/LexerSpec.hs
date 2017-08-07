@@ -2,13 +2,13 @@ module Glucose.LexerSpec (spec) where
 
 import Test.Prelude
 
-import Data.Text as Text (pack, foldl)
-import Glucose.Error
+import Data.Monoid
+import Data.Text as Text (Text, pack, foldl)
 import Glucose.Lexer
 import Glucose.Lexer.Char (updateLocation)
 import Glucose.Lexer.Reversible hiding (token)
+import Glucose.Lexer.SyntaxError (SyntaxError(..), SyntaxErrorDetails(SyntaxErrorDetails))
 import Glucose.Source
-import Glucose.Test.Error
 import Glucose.Test.Lexer ()
 import Glucose.Token
 
@@ -80,7 +80,7 @@ itParsesIntegerLiterals = describe "correctly parses integer literals" $ do
   it "errors on integer literal with blank exponent" $
     tokens "12e" `shouldErrorContaining` "missing exponent"
   it "errors on integer literal with negative exponent" $
-    tokens "12e-3" `shouldErrorWith` compileError "1:4@3" (SyntaxError "negative exponent" "integer literal")
+    tokens "12e-3" `shouldErrorWith` syntaxError "1:4@3" "negative exponent" "integer literal"
   it "errors on unexpected char immediately following integer literal" $
     tokens "123f" `shouldErrorWith` unexpectedChar "1:4@3" 'f' "in numeric literal"
   it "errors on unexpected char within integer literal" $
@@ -101,11 +101,22 @@ itParsesFractionalLiterals = describe "correctly parses fractional literals" $ d
   it "correctly parses a fractional literal with negative exponent" $
     tokens "9876543.21e-08" `shouldBe` Right [FloatLiteral 0.0987654321]
   it "errors on fractional literal with blank exponent" $
-    tokens "12.3e" `shouldErrorWith` compileError "1:6@5" (SyntaxError "missing exponent" "numeric literal")
+    tokens "12.3e" `shouldErrorWith` syntaxError "1:6@5" "missing exponent" "numeric literal"
   it "errors on unexpected char immediately following fractional literal" $
     tokens "123.4f" `shouldErrorWith` unexpectedChar "1:6@5" 'f' "in numeric literal"
   it "errors on unexpected char within fractional literal" $
     tokens "12._3" `shouldErrorWith` unexpectedChar "1:4@3" '_' "in numeric literal"
+
+-- * Expected Errors
+
+unexpectedChar :: String -> Char -> Text -> SyntaxError
+unexpectedChar loc c = unexpectedThing loc $ pack ['\'', c, '\'']
+
+unexpectedThing :: String -> Text -> Text -> SyntaxError
+unexpectedThing loc a = syntaxError loc $ "unexpected " <> a
+
+syntaxError :: String -> Text -> Text -> SyntaxError
+syntaxError loc message context = SyntaxError (read loc) $ SyntaxErrorDetails message context
 
 -- * Argument test-cases
 

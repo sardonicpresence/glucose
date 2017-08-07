@@ -30,7 +30,7 @@ codegenModuleDefinitions = codegen
 
 codegenDefinitions :: Comonad f => [Definition f] -> JSRaw
 codegenDefinitions defs = execCodegen vars $ mapAttemptM_ attemptToDefine defs where
-  vars = Set.fromList $ map identifier (toList defs)
+  vars = Set.fromList $ map (extract . identifier) (toList defs)
   attemptToDefine def = maybe (pure False) ((True <$) . tell) =<< definition def
 
 mapAttemptM_ :: Monad m => (a -> m Bool) -> [a] -> m ()
@@ -64,13 +64,13 @@ definition (Definition (extract -> Identifier name) def) = do
   _2 %= delete (Identifier name)
   expr <- expression (extract def)
   pure . Just $ name <> " = " <> expr <> "\n"
-definition (Constructor (extract -> Identifier name) (extract -> typeName) _) = do
-  _2 %= delete (Identifier name)
-  typeDefined <- uses _1 (Set.member typeName)
+definition (Constructor (extract -> name) (extract -> typeName) _) = do
+  _2 %= delete name
+  typeDefined <- uses _1 $ Set.member typeName
   unless typeDefined $ do
     _1 %= Set.insert typeName
     tell $ typeDefinition typeName
-  pure . Just $ name <> " = " <> "new " <> identify typeName <> "()"
+  pure . Just $ pack (show name) <> " = " <> "new " <> pack (show typeName) <> "()\n"
 
 expression :: Comonad f => Expression f -> Codegen Text
 expression (Literal a) = pure . pack $ show a

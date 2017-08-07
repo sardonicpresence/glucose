@@ -4,7 +4,7 @@ import Data.List as List
 import Data.Ratio ((%))
 import Data.String (fromString)
 import Data.Text as Text
-import Glucose.Identifier (Identifier, identify)
+import Glucose.Identifier (Identifier)
 import Glucose.Lexer.Char
 import Glucose.Lexer.Reversible
 import Glucose.Source
@@ -32,7 +32,7 @@ instance Arbitrary Token where
   arbitrary = oneof
     [ pure EndOfDefinition
     , pure BeginLambda
-    , Identifier . identify <$> arbitrary
+    , Identifier . pack . show <$> (arbitrary :: Gen Identifier)
     , Keyword <$> arbitrary
     , Operator <$> arbitrary
     , pure OpenParen

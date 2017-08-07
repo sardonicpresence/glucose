@@ -92,17 +92,17 @@ instance Annotations ann => Typed Literal ann where
 instance Annotations ann => Typed (Arg ann) ann where
   typeOf (Arg _ ty) = ty
 
--- instance (Comonad f, Typed a ann) => Typed (f a) ann where
---   typeOf = typeOf . extract
-
 -- * Bound instances
 
-instance Comonad f => Bound (Definition ann f) where
-  identifier (Definition name _) = extract name
-  identifier (Constructor name _ _) = extract name
+instance Bound f (Definition ann f) where
+  identifier (Definition name _) = name
+  identifier (Constructor name _ _) = name
 
-instance Bound (Arg ann) where
-  identifier (Arg name _) = name
+instance Comonad f => Bound f (f (Definition ann f)) where
+  identifier = identifier . extract
+
+instance Functor f => Bound f (f (Arg ann)) where
+  identifier = fmap $ \case Arg name _ -> name
 
 -- * Annotations
 
