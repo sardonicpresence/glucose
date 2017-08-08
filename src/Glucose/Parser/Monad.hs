@@ -53,29 +53,29 @@ resolveOutcome (Success a) = pure a
 resolveOutcome (Failure e) = throwError e
 resolveOutcome (Pure _ a) = pure a
 
-type Parser e t ts a = ReaderT (EOFOr t -> [EOFOr String] -> e) (StateT ts (Outcome e)) a
+type Parser e t ts a = (Semigroup e, Cons ts ts t t) => ReaderT (EOFOr t -> [EOFOr String] -> e) (StateT ts (Outcome e)) a
 
-runParser :: (MonadError e m, Semigroup e) => Parser e t ts a -> (EOFOr t -> [EOFOr String] -> e) -> ts -> m a
+runParser :: (Semigroup e, Cons ts ts t t, MonadError e m) => Parser e t ts a -> (EOFOr t -> [EOFOr String] -> e) -> ts -> m a
 runParser p onError ts = resolveOutcome $ fst <$> runStateT (runReaderT p onError) ts
 
-parser :: (Semigroup e, Cons ts ts t t) => (Maybe (t, ts) -> Parser e t ts a) -> Parser e t ts a
+parser :: (Maybe (t, ts) -> Parser e t ts a) -> Parser e t ts a
 parser f = gets uncons >>= \p -> case p of
   Nothing -> f Nothing
   Just (_, ts) -> put ts *> f p
 
-eof :: (Semigroup e, Cons ts ts t t) => Parser e t ts ()
+eof :: Parser e t ts ()
 eof = parser $ \case
   Nothing -> pure ()
   Just (t, _) -> parseError (NotEOF t) EOF
 
-lexeme :: (Semigroup e, Cons ts ts t t) => String -> (t -> Maybe a) -> Parser e t ts a
+lexeme :: String -> (t -> Maybe a) -> Parser e t ts a
 lexeme label f = parser $ \case
   Nothing -> parseError EOF (NotEOF label)
   Just (t, ts') -> case f t of
     Nothing -> parseError (NotEOF t) (NotEOF label)
     Just a -> put ts' *> pure a
 
-parseError :: Semigroup e => EOFOr t -> EOFOr String -> Parser e t ts a
+parseError :: EOFOr t -> EOFOr String -> Parser e t ts a
 parseError u e = asks (\f -> f u [e]) >>= throwError
 
 -- * Utilities

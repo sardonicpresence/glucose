@@ -1,7 +1,9 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Glucose.Lexer (tokens, tokenise) where
 
 import Control.Comonad
 import Control.Lens
+import Control.Lens.TH ()
 import Control.Monad.Except
 import Control.Monad.RWS
 import Data.Char
@@ -17,15 +19,6 @@ import Glucose.Token
 
 type Tokenised = (Location, [FromSource Token])
 
--- | Perform lexical analysis, splitting UTF8 text into tokens.
-tokens :: MonadError SyntaxError m => Text -> m [Token]
-tokens input = map extract . extract <$> tokenise input
-
--- | Perform lexical analysis, splitting UTF8 text into tokens.
--- Evaluates to a list of tokens, each associated with a range of characters, paired with the location of EOF.
-tokenise :: MonadError SyntaxError m => Text -> m Tokenised
-tokenise = runLexer . traverse_ consume . unpack
-
 data PartialLexeme
   = StartOfLine
   | Indentation
@@ -36,27 +29,32 @@ data PartialLexeme
   | NumericLiteral NumericLiteral
   | EOF
 
-data Lexer = Lexer { partial :: PartialLexeme, lexemeStart :: Location, pos :: Location, inDefinition :: Bool }
+data Lexer = Lexer { _partial :: PartialLexeme, _lexemeStart :: Location, _pos :: Location, _inDefinition :: Bool }
+
+makeLenses ''Lexer
 
 initLexer :: Lexer
 initLexer = Lexer StartOfLine beginning beginning False
 
-_pos :: Lens Lexer Lexer Location Location
-_pos = lens pos (\lexer pos' -> lexer {pos = pos'})
+-- | Perform lexical analysis, splitting UTF8 text into tokens.
+tokens :: MonadError SyntaxError m => Text -> m [Token]
+tokens input = map extract . extract <$> tokenise input
 
-_partial :: Lens Lexer Lexer PartialLexeme PartialLexeme
-_partial = lens partial (\lexer partial' -> lexer { partial = partial' })
+-- | Perform lexical analysis, splitting UTF8 text into tokens.
+-- Evaluates to a list of tokens, each associated with a range of characters, paired with the location of EOF.
+tokenise :: MonadError SyntaxError m => Text -> m Tokenised
+tokenise = runLexer . traverse_ consume . unpack
 
 type Lex m a = RWST () [FromSource Token] Lexer m a
 
 runLexer :: MonadError SyntaxError m => Lex m () -> m Tokenised
-runLexer l = (_1 %~ pos) <$> execRWST (l *> completeLexeme Nothing) () initLexer
+runLexer l = (_1 %~ view pos) <$> execRWST (l *> completeLexeme Nothing) () initLexer
 
 consume :: MonadError SyntaxError m => Char -> Lex m ()
-consume c = consumeChar c *> (_pos %= updateLocation c)
+consume c = consumeChar c *> (pos %= updateLocation c)
 
 consumeChar :: MonadError SyntaxError m => Char -> Lex m ()
-consumeChar c = maybe (completeLexeme $ Just c) (_partial .=) =<< maybeAppend c =<< gets partial
+consumeChar c = maybe (completeLexeme $ Just c) (partial .=) =<< maybeAppend c =<< use partial
 
 maybeAppend :: MonadError SyntaxError m => Char -> PartialLexeme -> Lex m (Maybe PartialLexeme)
 maybeAppend c StartOfLine | isNewline c = pure $ Just StartOfLine
@@ -85,11 +83,11 @@ startingWith c | isOperator c = pure $ PartialOperator [c]
 startingWith c = unexpectedChar c "in input"
 
 completeLexeme :: MonadError SyntaxError m => Maybe Char -> Lex m ()
-completeLexeme nextChar = gets partial >>= \case
+completeLexeme nextChar = use partial >>= \case
   EOF -> error "Still lexing after eof!"
   StartOfLine -> unless (isNothing nextChar) $ implicitEndOfDefinition *> nextLexeme nextChar
   Indentation -> do
-    indentedDefinition <- ((isJust nextChar &&) . not) <$> gets inDefinition
+    indentedDefinition <- uses inDefinition $ (isJust nextChar &&) . not
     when indentedDefinition $ unexpected "indentation" "before first definition"
     nextLexeme nextChar
   Gap -> nextLexeme nextChar
@@ -106,26 +104,27 @@ completeLexeme nextChar = gets partial >>= \case
     case lastChar of
       Nothing -> tellLexeme nextChar token
       Just lc -> do
-        _pos %= rewind
+        pos %= rewind
         case nextChar of
           Nothing -> unexpectedChar lc "following numeric literal"
           Just nc -> do
             tellLexeme lastChar token
-            _pos %= updateLocation lc
+            pos %= updateLocation lc
             consumeChar nc
 
 locateError :: MonadError SyntaxError m => Lex (Either SyntaxErrorDetails) a -> Lex m a
-locateError m = gets pos >>= \loc -> mapRWST (either (throwError . SyntaxError loc) pure) m
+locateError m = use pos >>= \loc -> mapRWST (either (throwError . SyntaxError loc) pure) m
 
 implicitEndOfDefinition :: Monad m => Lex m ()
 implicitEndOfDefinition = do
-  start <- gets lexemeStart
+  start <- use lexemeStart
   when (start /= beginning) $ tellToken start start EndOfDefinition
 
 tellLexeme :: MonadError SyntaxError m => Maybe Char -> Token -> Lex m ()
 tellLexeme nextChar token = do
-  Lexer { lexemeStart, pos } <- get
-  tellToken lexemeStart pos token
+  start <- use lexemeStart
+  pos <- use pos
+  tellToken start pos token
   nextLexeme nextChar
 
 tellToken :: Monad m => Location -> Location -> Token -> Lex m ()
@@ -133,14 +132,15 @@ tellToken start after token = tell [FromSource (SourceRange start $ rewind after
 
 nextLexeme :: MonadError SyntaxError m => Maybe Char -> Lex m ()
 nextLexeme nextChar =  do
-  partial' <- maybe (pure EOF) startingWith nextChar
-  modify $ \lexer -> lexer { partial = partial', lexemeStart = pos lexer, inDefinition = True }
+  partial <~ maybe (pure EOF) startingWith nextChar
+  lexemeStart <~ use pos
+  inDefinition .= True
 
 
 -- * Error messages
 
 syntaxError :: MonadError SyntaxError m => Text -> Text -> Lex m a
-syntaxError message context = gets pos >>= \loc -> throwError . SyntaxError loc $ SyntaxErrorDetails message context
+syntaxError message context = use pos >>= \loc -> throwError . SyntaxError loc $ SyntaxErrorDetails message context
 
 unexpected :: MonadError SyntaxError m => String -> Text -> Lex m a
 unexpected u = syntaxError ("unexpected " <> pack u)

@@ -58,6 +58,7 @@ library
                      , LLVM.DSL
                      , LLVM.Name
                      , Control.Comonad.Utils
+                     , Control.Lens.Utils
                      , Data.Map.Utils
   default-extensions:  OverloadedStrings
                      , BangPatterns

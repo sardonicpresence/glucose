@@ -39,6 +39,7 @@ doc :
 	make -C manual html man
 
 clean :
+	stack clean
 	rm -f example.exe example.o example.bc example.s example.ll example.opt example.js src/RT/rt.s src/RT/rt.bc src/RT/rt.o
 
 .PHONY : default build test doc clean

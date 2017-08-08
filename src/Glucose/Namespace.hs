@@ -39,19 +39,18 @@ popScope (Namespace scopes) = Namespace $ tail scopes
 
 declare :: Comonad f => Variable f -> Namespace f -> Either (Variable f) (Namespace f)
 declare var ns = case lookupVariable (identify var) ns of
-  Nothing -> pure $ declare_ var ns
+  Nothing -> pure $ declareUnsafe var ns
   Just (CurrentScope, prev) -> throwError prev -- duplicate definition
-  Just _ -> pure $ declare_ var ns -- TODO: warn about name shadowing
+  Just _ -> pure $ declareUnsafe var ns -- TODO: warn about name shadowing
+  where
+    declareUnsafe var (Namespace []) = Namespace [Scope $ Map.insert (identify var) var Map.empty]
+    declareUnsafe var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identify var) var s) : ss
 
 declareArg :: Comonad f => f Arg -> Namespace f -> Either (Variable f) (Namespace f)
 declareArg = declare . Arg
 
 declareDefinition :: Comonad f => f (Definition f) -> Namespace f -> Either (Variable f) (Namespace f)
 declareDefinition = declare . Definition
-
-declare_ :: Comonad f => Variable f -> Namespace f -> Namespace f
-declare_ var (Namespace []) = Namespace [Scope $ Map.insert (identify var) var Map.empty]
-declare_ var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identify var) var s) : ss
 
 lookupVariable :: Identifier -> Namespace f -> Maybe (ScopeLevel, Variable f)
 lookupVariable _ (Namespace []) = Nothing

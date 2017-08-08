@@ -25,20 +25,6 @@ data Arg ann = Arg Identifier (Type ann)
 deriving instance Eq (Type ann) => Eq (Arg ann)
 deriving instance Ord (Type ann) => Ord (Arg ann)
 
-instance Show (Type Checked) where
-  show Integer = "Int"
-  show Float = "Float"
-  show (Boxed ty) = "{" ++ show ty ++ "}"
-  show (ADT name) = show name
-  show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
-  show (Function ar arg ret) = show arg ++ show ar ++ show ret
-  show (Bound name) = show name
-  show (Free name) = "*" ++ show name
-
-argTypes :: Type Checked -> [Type Checked]
-argTypes (Function _ a b) = a : argTypes b
-argTypes _ = []
-
 -- * Show instances
 
 instance (Comonad f, Annotations ann) => Show (Module ann f) where
@@ -121,7 +107,7 @@ data Unchecked
 instance Annotations Unchecked where
   data Type Unchecked = Unknown deriving (Eq)
   data RefKind Unchecked = UnknownKind deriving (Eq)
-  mkADT = const Unknown
+  mkADT _ = Unknown
   intType = Unknown
   floatType = Unknown
   funType _ _ _ = Unknown
@@ -145,6 +131,20 @@ instance Annotations Checked where
   a `withType` ty = a ++ ":" ++ show ty
   a `withRefKind` Local = "%" ++ a
   a `withRefKind` Global = "@" ++ a
+
+instance Show (Type Checked) where
+  show Integer = "Int"
+  show Float = "Float"
+  show (Boxed ty) = "{" ++ show ty ++ "}"
+  show (ADT name) = show name
+  show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
+  show (Function ar arg ret) = show arg ++ show ar ++ show ret
+  show (Bound name) = show name
+  show (Free name) = "*" ++ show name
+
+argTypes :: Type Checked -> [Type Checked]
+argTypes (Function _ a b) = a : argTypes b
+argTypes _ = []
 
 data Arity = UnknownArity | Arity Int deriving (Eq, Ord)
 

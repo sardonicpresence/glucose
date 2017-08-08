@@ -1,9 +1,11 @@
+{-# LANGUAGE TemplateHaskell #-}
 module LLVM.DSL where
 
 import LLVM.AST
 import LLVM.Name
 
 import Control.Lens hiding (assign)
+import Control.Lens.TH ()
 import Control.Monad.Identity
 import Control.Monad.State hiding (state)
 import Data.Maybe
@@ -16,20 +18,7 @@ data DSL = DSL { _globals :: [Global]
                , _statements :: [Statement]
                , _lastVar :: Int }
 
-globals :: Lens' DSL [Global]
-globals = lens _globals $ \a b -> a { _globals = b }
-
-blocks :: Lens' DSL [BasicBlock]
-blocks = lens _blocks $ \a b -> a { _blocks = b }
-
-maybeLabel :: Lens' DSL (Maybe Name)
-maybeLabel = lens _maybeLabel $ \a b -> a { _maybeLabel = b }
-
-statements :: Lens' DSL [Statement]
-statements = lens _statements $ \a b -> a { _statements = b }
-
-lastVar :: Lens' DSL Int
-lastVar = lens _lastVar $ \a b -> a { _lastVar = b }
+makeLenses ''DSL
 
 type LLVMT m a = StateT DSL m a
 
