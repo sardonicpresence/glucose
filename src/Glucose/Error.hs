@@ -5,8 +5,6 @@ import Control.Monad.Except
 import Data.Semigroup
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
-import Glucose.Identifier (Identifier)
-import Glucose.IR.Checked (Type)
 import qualified Glucose.Lexer.SyntaxError as Lexer
 import Glucose.Parser.EOFOr
 import qualified Glucose.Parser.ParseError as Parser
@@ -35,12 +33,6 @@ instance ErrorDetails Parser.ParseError where
 instance ErrorDetails (TypeChecker.TypeCheckError FromSource) where
   toCompileError = TypeCheckError
 
-instance (Located (f Identifier), Located (f Type)) => Located (TypeChecker.TypeCheckError f) where
-  location (TypeChecker.DuplicateDefinition a _) = location a
-  location (TypeChecker.UnrecognisedVariable a) = location a
-  location (TypeChecker.RecursiveDefinition a) = location a
-  location (TypeChecker.TypeMismatch a _) = location a
-
 
 -- * Error formatting
 
@@ -64,6 +56,11 @@ formatError source = \case
       "recursive definition: the value of '" <> format name <> "' depends on itself"
     TypeChecker.TypeMismatch a b ->
       "type mismatch: expected '" <> format a <> "', found '" <> format b <> "'" -- TODO: improve
+  where
+    location (TypeChecker.DuplicateDefinition a _) = startLocation a
+    location (TypeChecker.UnrecognisedVariable a) = startLocation a
+    location (TypeChecker.RecursiveDefinition a) = startLocation a
+    location (TypeChecker.TypeMismatch a _) = startLocation a
 
 withLocation :: Location -> Text -> Text
 withLocation loc s = showLocation loc <> ":\n" <> s <> "\n"

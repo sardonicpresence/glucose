@@ -32,12 +32,6 @@ rewind :: Location -> Location
 rewind (Location _ _ 1) = error "Can't rewind a Location past a newline!"
 rewind (Location cp line col) = Location (cp-1) line (col-1)
 
-
--- | A value with an associated location in UTF8 text.
-class Located a where
-  location ::a -> Location
-
-
 -- | An inclusive range of characters in UTF8 text.
 data SourceRange = SourceRange Location Location deriving (Eq, Ord)
 
@@ -73,9 +67,6 @@ instance Comonad FromSource where
   extend f x@(FromSource s _) = FromSource s (f x)
 
 instance ComonadApply FromSource
-
-instance Located (FromSource a) where
-  location = startLocation
 
 startLocation :: FromSource a -> Location
 startLocation (FromSource (SourceRange start _) _) = start
