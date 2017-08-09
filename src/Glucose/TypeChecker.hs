@@ -38,8 +38,10 @@ mkTypeChecker defs = do
 type TypeCheck f m a = (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => StateT (TypeChecker f) m a
 
 typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Unchecked f -> m (Module Checked f)
-typeCheck (Module defs) = Module <$> (evalStateT (traverse check defs) =<< mkTypeChecker defs) where
-  check def = do
+typeCheck (Module defs) = evalStateT (typeCheckModule $ Module defs) =<< mkTypeChecker defs
+
+typeCheckModule :: Module Unchecked f -> TypeCheck f m (Module Checked f)
+typeCheckModule (Module defs) = fmap Module . for defs $ \def -> do
     existing <- uses namespace . lookupDefinition . identify $ extract def
     maybe (typeCheckDefinition def) pure existing
 
@@ -49,7 +51,7 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
     recursive <- uses checking . elem $ extract name
     when recursive . throwError $ RecursiveDefinition name
     startChecking $ extract name
-    nextVar .= mkVarGen
+    -- nextVar .= mkVarGen
     Definition name <$> typeCheckExpression value
   Constructor name typeName index -> do
     let key = (extract typeName, index)
@@ -61,7 +63,7 @@ typeCheckExpression expr = for expr $ \case
   Literal literal -> pure $ Literal literal
   Reference _ identifier _ _ -> do
     referenced <- uses namespace $ fmap snd . lookupVariable identifier
-    maybe (typeCheckIdentifier $ identifier <$ expr) fromVariable referenced
+    maybe (typeCheckIdentifier $ identifier <$ expr) referenceVariable referenced
   Lambda args def -> do
     typeCheckedArgs <- traverse (traverse typeCheckArg) args
     pushArgs typeCheckedArgs
@@ -96,7 +98,8 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
   go (Free name) ty = pure (bindType name ty, id)
   go ty (Bound name) = pure (id, rebindType name ty)
   go (Bound name) ty = pure (rebindType name ty, id)
-  go a b = when (a /= b) (throwError $ TypeMismatch ty1 ty2) *> pure (id, id)
+  go a b | a /= b = throwError $ TypeMismatch ty1 ty2
+  go _ _ = pure (id, id)
 
 startChecking :: Identifier -> TypeCheck f m ()
 startChecking name = checking %= Set.insert name
@@ -132,12 +135,12 @@ newVar = nextVar %%= genVar
 functionOf :: Type Checked -> Type Checked
 functionOf a = Function UnknownArity a . Free $ Identifier "_"
 
-fromVariable :: Variable f -> TypeCheck f m (Expression Checked f)
-fromVariable (NS.Definition def) = referenceTo $ extract def
-fromVariable (NS.Arg arg) = pure $ referenceArg $ extract arg
-
-referenceArg :: Arg Checked -> Expression Checked f
-referenceArg (Arg name ty) = Reference Local name ty ty
+referenceVariable :: Variable f -> TypeCheck f m (Expression Checked f)
+referenceVariable (NS.Definition def) = referenceTo $ extract def
+referenceVariable (NS.Arg arg) = pure . referenceArg $ extract arg
 
 referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checked f)
 referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def) (typeOf def)
+
+referenceArg :: Arg Checked -> Expression Checked f
+referenceArg (Arg name ty) = Reference Local name ty ty
