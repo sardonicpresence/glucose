@@ -15,7 +15,7 @@ import Data.Traversable
 import Glucose.Desugar
 import Glucose.Identifier
 import Glucose.IR
-import Glucose.IR.Checked (bindTypes, bindType, rebindType, freeTypes)
+-- import Glucose.IR.Checked (bindTypes, bindType, rebindType, freeTypes)
 import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
 import Glucose.TypeChecker.TypeCheckError
@@ -37,15 +37,15 @@ mkTypeChecker defs = do
 
 type TypeCheck f m a = (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => StateT (TypeChecker f) m a
 
-typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Unchecked f -> m (Module Checked f)
+typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Untyped f -> m (Module Checked f)
 typeCheck (Module defs) = evalStateT (typeCheckModule $ Module defs) =<< mkTypeChecker defs
 
-typeCheckModule :: Module Unchecked f -> TypeCheck f m (Module Checked f)
+typeCheckModule :: Module Untyped f -> TypeCheck f m (Module Checked f)
 typeCheckModule (Module defs) = fmap Module . for defs $ \def -> do
     existing <- uses namespace . lookupDefinition . identify $ extract def
     maybe (typeCheckDefinition def) pure existing
 
-typeCheckDefinition :: f (Definition Unchecked f) -> TypeCheck f m (f (Definition Checked f))
+typeCheckDefinition :: f (Definition Untyped f) -> TypeCheck f m (f (Definition Checked f))
 typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
   Definition name value -> do
     recursive <- uses checking . elem $ extract name
@@ -58,7 +58,7 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
     modifyingM constructors . Map.insertOr key typeName $ duplicateDefinition typeName
     pure $ Constructor name typeName index
 
-typeCheckExpression :: f (Expression Unchecked f) -> TypeCheck f m (f (Expression Checked f))
+typeCheckExpression :: f (Expression Untyped f) -> TypeCheck f m (f (Expression Checked f))
 typeCheckExpression expr = for expr $ \case
   Literal literal -> pure $ Literal literal
   Reference _ identifier _ _ -> do
@@ -83,7 +83,7 @@ typeCheckIdentifier variable = do
   referenced <- uses unchecked . Map.lookup $ extract variable
   maybe (throwError $ UnrecognisedVariable variable) (referenceTo . extract <=< typeCheckDefinition) referenced
 
-typeCheckArg :: Arg Unchecked -> TypeCheck f m (Arg Checked)
+typeCheckArg :: Arg Untyped -> TypeCheck f m (Arg Checked)
 typeCheckArg (Arg name _) = Arg name . Bound <$> newVar
 
 unify :: (Comonad f, MonadError (TypeCheckError f) m)
@@ -94,8 +94,8 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
     (h1, h2) <- unify (f <$ ty1) (g <$ ty2)
     (i1, i2) <- unify (a <$ ty1) (b <$ ty2)
     pure (i1 . h1, i2 . h2)
-  go ty (Free name) = pure (id, bindType name ty)
-  go (Free name) ty = pure (bindType name ty, id)
+  -- go ty (Free name) = pure (id, bindType name ty)
+  -- go (Free name) ty = pure (bindType name ty, id)
   go ty (Bound name) = pure (id, rebindType name ty)
   go (Bound name) ty = pure (rebindType name ty, id)
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2

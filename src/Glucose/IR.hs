@@ -1,7 +1,15 @@
-{-# LANGUAGE ScopedTypeVariables, TypeFamilies #-}
-module Glucose.IR where
+{-# LANGUAGE ScopedTypeVariables, TypeFamilies, DataKinds, AllowAmbiguousTypes #-}
+module Glucose.IR
+(
+  Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
+  Annotations(..), ReferenceAnnotation(..), Untyped, Unchecked, Checked, Type(..),
+  Primitive(..), ConcreteType(..), Arity(..), ReferenceKind(..)
+)
+where
 
 import Control.Comonad
+import Control.Comonad.Utils
+import Control.Lens
 import Data.List
 import Glucose.Identifier
 
@@ -14,16 +22,77 @@ deriving instance (Eq (f Identifier), Eq (f (Expression ann f))) => Eq (Definiti
 
 data Expression ann f
   = Literal Literal
-  | Reference (RefKind ann) Identifier (Type ann) (Type ann)
+  | Reference (Ref ann) Identifier (Type ann) (Type ann)
   | Lambda [f (Arg ann)] (f (Expression ann f))
   | Apply (f (Expression ann f)) (f (Expression ann f))
-deriving instance (Eq (Type ann), Eq (RefKind ann), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
+deriving instance (Eq (Type ann), Eq (Ref ann), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq)
 
 data Arg ann = Arg Identifier (Type ann)
 deriving instance Eq (Type ann) => Eq (Arg ann)
 deriving instance Ord (Type ann) => Ord (Arg ann)
+
+
+-- * Annotations
+
+class ReferenceAnnotation (Ref ann) => Annotations ann where
+  data Type ann :: *
+  type Ref ann :: *
+  withType :: String -> Type ann -> String
+
+data Untyped
+data Unchecked
+data Checked
+
+
+-- * Types
+
+data Primitive = Integer | Float
+  deriving (Eq, Ord)
+
+data ConcreteType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t
+  deriving (Eq, Ord)
+
+instance Annotations Untyped where
+  data Type Untyped = Untyped
+  type Ref Untyped = ()
+  withType = const
+
+instance Annotations Unchecked where
+  data Type Unchecked = Free Identifier | Bound Identifier | Known (ConcreteType (Type Unchecked))
+  type Ref Unchecked = ReferenceKind
+  name `withType` ty = name ++ ":" ++ show ty
+
+instance Annotations Checked where
+  data Type Checked = Polymorphic Identifier | Monomorphic (ConcreteType (Type Checked)) deriving (Eq, Ord)
+  type Ref Checked = ReferenceKind
+  name `withType` ty = name ++ ":" ++ show ty
+
+instance Show (Type Unchecked) where
+  show (Free name) = "*" ++ show name
+  show (Bound name) = show name
+  show (Known ty) = show ty
+
+instance Show (Type Checked) where
+  show (Polymorphic name) = show name
+  show (Monomorphic ty) = show ty
+
+
+-- * References
+
+class ReferenceAnnotation a where
+  showRef :: Show b => a -> b -> String
+
+instance ReferenceAnnotation () where
+  showRef _ = show
+
+data ReferenceKind = Local | Global deriving (Eq)
+
+instance ReferenceAnnotation ReferenceKind where
+  showRef Local a = "%" ++ show a
+  showRef Global a = "@" ++ show a
+
 
 -- * Show instances
 
@@ -33,16 +102,17 @@ instance (Comonad f, Annotations ann) => Show (Module ann f) where
 instance (Comonad f, Annotations ann) => Show (Definition ann f) where
   show (Definition name value) =
     let n = show $ extract name
-        declaration = n `withType` (typeOf (extract value) :: Type ann)
+        -- declaration = show n `annotatedWith` (typeOf (extract value) :: Type ann)
         definition = show (extract name) ++ " = " ++ show (extract value)
-     in if declaration == n
-          then definition
-          else declaration ++ "\n" ++ definition
-  show (Constructor name typeName id) = show (extract name) ++ " = " ++ show (extract typeName) ++ "#" ++ show id
+     in definition
+    --  in if declaration == n
+    --       then definition
+    --       else declaration ++ "\n" ++ definition
+  show (Constructor name typeName index) = show (extract name) ++ " = " ++ show (extract typeName) ++ "#" ++ show index
 
 instance (Comonad f, Annotations ann) => Show (Expression ann f) where
-  show (Literal lit) = show lit `withType` (typeOf lit :: Type ann)
-  show (Reference kind name rep ty) = (show name `withRefKind` kind) `withType` ty `withType` rep -- TODO: include arity
+  show (Literal lit) = show lit
+  show (Reference kind name rep ty) = showRef kind name `withType` ty `withType` rep -- TODO: include arity
   show (Lambda args value) = "\\" ++ unwords (map (show . extract) args) ++ " -> " ++ show (extract value)
   show (Apply expr arg) = show (extract expr) ++ " (" ++ show (extract arg) ++ ")"
 
@@ -53,30 +123,57 @@ instance Show Literal where
   show (IntegerLiteral a) = show a
   show (FloatLiteral a) = show a
 
+instance Show t => Show (ConcreteType t) where
+  show (Unboxed ty) = show ty
+  show (Boxed ty) = "{" ++ show ty ++ "}"
+  show (ADT name) = show name
+  -- show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
+  show (Function ar arg ret) = "(" ++ show arg ++ show ar ++ show ret ++ ")"
+
+instance Show Primitive where
+  show Integer = "Int"
+  show Float = "Float"
+
+
 -- * Types
 
-class Annotations ann => Typed a ann where
-  typeOf :: a -> Type ann
+types :: (Traversable f, Ref from ~ Ref to) => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
+types _ (Literal lit) = pure $ Literal lit
+types f (Reference kind name rep ty) = Reference kind name <$> f rep <*> f ty
+types f (Lambda args expr) = Lambda <$> traverse (traverse $ argType f) args <*> traverse (types f) expr where
+  argType f (Arg name ty) = Arg name <$> f ty
+types f (Apply fun arg) = Apply <$> traverse (types f) fun <*> traverse (types f) arg
 
-instance (Comonad f, Annotations ann) => Typed (Definition ann f) ann where
-  typeOf (Definition _ e) = typeOf $ extract e
-  typeOf (Constructor _ typeName _) = mkADT (extract typeName)
+-- prims :: Traversal' Type Type
+-- prims f (Function rep a b) = Function rep <$> prims f a <*> prims f b
+-- prims f a = f a
 
-instance (Comonad f, Annotations ann) => Typed (Expression ann f) ann where
-  typeOf (Literal a) = typeOf a
-  typeOf (Reference _ _ _ ty) = ty
-  typeOf (Lambda args expr) = go n args where
-    go _ [] = typeOf $ extract expr
-    go m (a:as) = funType (Arity m) (typeOf $ extract a) $ go (m-1) as
-    n = length args
-  typeOf (Apply f _) = returnType (typeOf $ extract f)
+-- typeOf :: Expression ann f -> Type ann
+-- typeOf = const undefined
 
-instance Annotations ann => Typed Literal ann where
-  typeOf (IntegerLiteral _) = intType
-  typeOf (FloatLiteral _) = floatType
+-- class Typed a ann | a -> ann where
+--   typeOf :: a -> DataType (Type ann)
 
-instance Annotations ann => Typed (Arg ann) ann where
-  typeOf (Arg _ ty) = ty
+-- instance (Comonad f, TypeAnnotation (Type ann) (Type ann)) => Typed (Definition ann f) ann where
+--   typeOf (Definition _ e) = typeOf $ extract e
+--   typeOf (Constructor _ typeName _) = dataType . ADT $ extract typeName
+
+-- instance Comonad f => Typed (Expression ann f) ann where
+--   typeOf (Literal (IntegerLiteral _)) = dataType $ Primitive Integer
+--   typeOf (Literal (FloatLiteral _)) = dataType $ Primitive Float
+--   typeOf (Reference _ _ _ ty) = ty
+--   typeOf (Lambda args expr) = go n args where
+--     go _ [] = typeOf $ extract expr
+--     go m (a:as) = funType (Arity m) (typeOf $ extract a) $ go (m-1) as
+--     n = length args
+--   typeOf (Apply f _) = returnType (typeOf $ extract f)
+
+-- instance Typed Literal ann where
+--   typeOf (IntegerLiteral _) = intType
+--   typeOf (FloatLiteral _) = floatType
+
+-- instance TypeAnnotation (Type ann) (Type ann) => Typed (Arg ann) ann where
+--   typeOf (Arg _ ty) = ty
 
 -- * Bound instances
 
@@ -90,61 +187,9 @@ instance Comonad f => Bound f (f (Definition ann f)) where
 instance Functor f => Bound f (f (Arg ann)) where
   identifier = fmap $ \case Arg name _ -> name
 
--- * Annotations
-
-class Annotations a where
-  data Type a :: *
-  data RefKind a :: *
-  mkADT :: Identifier -> Type a
-  intType :: Type a
-  floatType :: Type a
-  funType :: Arity -> Type a -> Type a -> Type a
-  returnType :: Type a -> Type a
-  withType :: String -> Type a -> String
-  withRefKind :: String -> RefKind a -> String
-
-data Unchecked
-instance Annotations Unchecked where
-  data Type Unchecked = Unknown deriving (Eq)
-  data RefKind Unchecked = UnknownKind deriving (Eq)
-  mkADT _ = Unknown
-  intType = Unknown
-  floatType = Unknown
-  funType _ _ _ = Unknown
-  returnType _ = Unknown
-  a `withType` _ = a
-  a `withRefKind` _ = a
-
-data Checked
-instance Annotations Checked where
-  data Type Checked = Integer | Float | ADT Identifier | Function Arity (Type Checked) (Type Checked)
-                    | Bound Identifier | Boxed (Type Checked)
-                    | Free Identifier -- Must be eliminated by type-checking (should be made seperate)
-                    deriving (Eq, Ord)
-  data RefKind Checked = Local | Global deriving (Eq)
-  mkADT = ADT
-  intType = Integer
-  floatType = Float
-  funType = Function
-  returnType (Function _ _ b) = b
-  returnType _ = error "Cannot pass argument to a non-function!"
-  a `withType` ty = a ++ ":" ++ show ty
-  a `withRefKind` Local = "%" ++ a
-  a `withRefKind` Global = "@" ++ a
-
-instance Show (Type Checked) where
-  show Integer = "Int"
-  show Float = "Float"
-  show (Boxed ty) = "{" ++ show ty ++ "}"
-  show (ADT name) = show name
-  show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
-  show (Function ar arg ret) = show arg ++ show ar ++ show ret
-  show (Bound name) = show name
-  show (Free name) = "*" ++ show name
-
-argTypes :: Type Checked -> [Type Checked]
-argTypes (Function _ a b) = a : argTypes b
-argTypes _ = []
+-- argTypes :: Type Checked -> [Type Checked]
+-- argTypes (Function _ a b) = a : argTypes b
+-- argTypes _ = []
 
 data Arity = UnknownArity | Arity Int deriving (Eq, Ord)
 
