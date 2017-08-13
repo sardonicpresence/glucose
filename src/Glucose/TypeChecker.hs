@@ -68,15 +68,19 @@ typeCheckExpression expr = for expr $ \case
     typeCheckedArgs <- traverse (traverse typeCheckArg) args
     pushArgs typeCheckedArgs
     retType <- Bound <$> newVar
-    def' <- typeCheckExpression def
+    def' <- fmap (types %~ uncheckedType) <$> typeCheckExpression def
     def'' <- (<$> def') . snd <$> unify (typeOf <$> def') (retType <$ def)
-    def''' <- traverse (bindTypes newVar) def''
+    def''' <- traverse (types $ checkedType newVar) def''
     pure $ Lambda typeCheckedArgs def'''
-  Apply expr arg -> do
-    expr' <- typeCheckExpression expr
-    arg' <- typeCheckExpression arg
-    (f, g) <- unify (typeOf <$> expr') (functionOf . typeOf <$> arg')
+  Apply expr arg ty -> do
+    expr' <- fmap (types %~ uncheckedType) <$> typeCheckExpression expr
+    arg' <- fmap (types %~ uncheckedType) <$> typeCheckExpression arg
+    (f, g) <- unify (typeOf <$> expr') (Function UnknownArity . typeOf <$> arg' <*> pure ty)
     pure $ Apply (f <$> expr') (g <$> arg')
+
+
+functionOf :: Type Checked -> Type Checked
+functionOf a = Function UnknownArity a . Free $ Identifier "_"
 
 typeCheckIdentifier :: f Identifier -> TypeCheck f m (Expression Checked f)
 typeCheckIdentifier variable = do
@@ -84,20 +88,51 @@ typeCheckIdentifier variable = do
   maybe (throwError $ UnrecognisedVariable variable) (referenceTo . extract <=< typeCheckDefinition) referenced
 
 typeCheckArg :: Arg Untyped -> TypeCheck f m (Arg Checked)
-typeCheckArg (Arg name _) = Arg name . Bound <$> newVar
+typeCheckArg (Arg name _) = Arg name . Polymorphic <$> newVar
 
-unify :: (Comonad f, MonadError (TypeCheckError f) m)
+unifyUnchecked :: (Comonad f, MonadError (TypeCheckError f) m)
+ => f (Type Unchecked) -> f (Type Unchecked)
+ -> m (Expression Unchecked f -> Expression Unchecked f, Expression Unchecked f -> Expression Unchecked f)
+unifyUnchecked ty1 ty2 = go (extract ty1) (extract ty2) where
+  go ty (Free name) = pure (id, replaceType (Free name) ty)
+  go (Free name) ty = pure (replaceType (Free name) ty, id)
+  go (Bound a) (Bound b) = bimap _Bound _Bound $ unify a b
+  -- go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
+  --   (h1, h2) <- unifyUnchecked (f <$ ty1) (g <$ ty2)
+  --   (i1, i2) <- unifyUnchecked (a <$ ty1) (b <$ ty2)
+  --   pure (i1 . h1, i2 . h2)
+  -- go ty (Bound (Polymorphic name)) = pure (id, replaceType (Bound (Polymorphic name)) ty)
+  -- go (Bound (Polymorphic name)) ty = pure (replaceType (Bound (Polymorphic name)) ty, id)
+  -- go a b | a /= b = throwError $ TypeMismatch ty1 ty2
+  -- go _ _ = pure (id, id)
+
+unifyChecked :: (Comonad f, MonadError (TypeCheckError f) m)
  => f (Type Checked) -> f (Type Checked)
  -> m (Expression Checked f -> Expression Checked f, Expression Checked f -> Expression Checked f)
-unify ty1 ty2 = go (extract ty1) (extract ty2) where
+unifyChecked ty1 ty2 = go (extract ty1) (extract ty2) where
+  go (Known (Function _ f a)) (Known (Function _ g b)) = do
+    (h1, h2) <- unifyChecked (f <$ ty1) (g <$ ty2)
+    (i1, i2) <- unifyChecked (a <$ ty1) (b <$ ty2)
+    pure (i1 . h1, i2 . h2)
+  go ty (Known (Polymorphic name)) = pure (id, replaceType (Known (Polymorphic name)) ty)
+  go (Known (Polymorphic name)) ty = pure (replaceType (Known (Polymorphic name)) ty, id)
+  go a b | a /= b = throwError $ TypeMismatch (uncheckedType <$> ty1) (uncheckedType <$> ty2)
+  go _ _ = pure (id, id)
+
+replace :: Type ann -> Type ann -> Type ann -> Type ann
+replace from to a | a == from = to
+replace _ _ a = a
+
+-- unify :: (Comonad f, MonadError (TypeCheckError f) m)
+--  => f (DataType t) -> f (DataType t)
+--  -> m (Expression Unchecked f -> Expression Unchecked f, Expression Unchecked f -> Expression Unchecked f)
+unify' ty1 ty2 = go (extract ty1) (extract ty2) where
   go (Function _ f a) (Function _ g b) = do
     (h1, h2) <- unify (f <$ ty1) (g <$ ty2)
     (i1, i2) <- unify (a <$ ty1) (b <$ ty2)
     pure (i1 . h1, i2 . h2)
-  -- go ty (Free name) = pure (id, bindType name ty)
-  -- go (Free name) ty = pure (bindType name ty, id)
-  go ty (Bound name) = pure (id, rebindType name ty)
-  go (Bound name) ty = pure (rebindType name ty, id)
+  go a b@Polymorphic{} = pure (id, replace b a)
+  go a@Polymorphic{} ty = pure (replace a b, id)
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2
   go _ _ = pure (id, id)
 
@@ -131,9 +166,6 @@ duplicateDefinition new = throwError . DuplicateDefinition (identifier new) . vo
 
 newVar :: TypeCheck f m Identifier
 newVar = nextVar %%= genVar
-
-functionOf :: Type Checked -> Type Checked
-functionOf a = Function UnknownArity a . Free $ Identifier "_"
 
 referenceVariable :: Variable f -> TypeCheck f m (Expression Checked f)
 referenceVariable (NS.Definition def) = referenceTo $ extract def

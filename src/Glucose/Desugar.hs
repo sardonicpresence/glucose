@@ -21,7 +21,7 @@ constructor typeName n ctor = pure $ ctor $> IR.Constructor ctor typeName n
 
 expression :: (Comonad f, Applicative m, Traversable m) => AST.Expression f -> m (IR.Expression Untyped f)
 expression (AST.Value a) = value a
-expression (AST.Apply f a) = IR.Apply <$> mapC expression f <*> mapC value a
+expression (AST.Apply f a) = IR.Apply <$> mapC expression f <*> mapC value a <*> pure Untyped
 
 value :: (Applicative m, Traversable m) => Comonad f => AST.Value f -> m (IR.Expression Untyped f)
 value (AST.Literal lit) = IR.Literal <$> literal lit

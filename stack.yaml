@@ -3,6 +3,6 @@ extra-package-dbs: []
 packages:
 - '.'
 extra-deps:
-resolver: nightly-2017-04-19
+resolver: lts-9.0
 ghc-options:
   "*": -Wall -Wno-type-defaults -Wno-orphans -Wno-name-shadowing -Wno-missing-signatures -fprint-potential-instances
