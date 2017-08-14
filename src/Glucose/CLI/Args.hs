@@ -28,4 +28,5 @@ glucose = compilerArgs &= summary (app ++ " " ++ version ++ "\n" ++ copyright) &
 parseOutputType :: MonadError String m => String -> m CompilerOutput
 parseOutputType "ll" = pure LLVM
 parseOutputType "js" = pure JavaScript
+parseOutputType "ir" = pure IR
 parseOutputType s = throwError $ "Unknown output type: " ++ s

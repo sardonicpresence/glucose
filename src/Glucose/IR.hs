@@ -173,7 +173,7 @@ instance Show t => Show (DataType t) where
   show (ADT name) = show name
   -- show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
   show (Function ar arg ret) = "(" ++ show arg ++ show ar ++ show ret ++ ")"
-  show (Polymorphic name) = "*" ++ show name
+  show (Polymorphic name) = show name
 
 instance Show Primitive where
   show Integer = "Int"

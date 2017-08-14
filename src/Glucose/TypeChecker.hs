@@ -15,7 +15,6 @@ import Data.Traversable
 import Glucose.Desugar
 import Glucose.Identifier
 import Glucose.IR
--- import Glucose.IR.Checked (bindTypes, bindType, rebindType, freeTypes)
 import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
 import Glucose.TypeChecker.TypeCheckError
@@ -51,7 +50,7 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
     recursive <- uses checking . elem $ extract name
     when recursive . throwError $ RecursiveDefinition name
     startChecking $ extract name
-    -- nextVar .= mkVarGen
+    nextVar .= mkVarGen
     Definition name <$> (traverse (bindTypes newVar) =<< typeCheckExpression value)
   Constructor name typeName index -> do
     let key = (extract typeName, index)

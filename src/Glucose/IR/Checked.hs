@@ -36,7 +36,7 @@ flattenApply f a = go f [a] where
   apply (Checked (Function (Arity _) _ b)) applied (a:as) = apply b (a:applied) as
   apply _ [] [] = ([], Nothing)
   apply b applied [] = ([], Just . Partial b $ reverse applied)
-  apply _ _ _ = error "Cannot supply arguments to a non-function!" -- TODO: improve & move
+  apply b _ _ = error $ "Cannot supply arguments to non-function " ++ show b -- TODO: improve & move
 
 captures :: Comonad f => Expression f -> Set.Set Arg
 captures (Reference Local name _ ty) = Set.singleton $ Arg name ty
