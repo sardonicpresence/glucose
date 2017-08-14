@@ -2,14 +2,16 @@
 module Glucose.IR
 (
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
-  Annotations(..), ReferenceAnnotation(..), Untyped, Unchecked, Checked, Type(..),
-  Primitive(..), ConcreteType(..), Arity(..), ReferenceKind(..)
+  Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
+  Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
+  types, replaceType, freeTypes, bindTypes, uncheck
 )
 where
 
 import Control.Comonad
 import Control.Comonad.Utils
 import Control.Lens
+import Data.Function (fix)
 import Data.List
 import Glucose.Identifier
 
@@ -24,7 +26,7 @@ data Expression ann f
   = Literal Literal
   | Reference (Ref ann) Identifier (Type ann) (Type ann)
   | Lambda [f (Arg ann)] (f (Expression ann f))
-  | Apply (f (Expression ann f)) (f (Expression ann f))
+  | Apply (f (Expression ann f)) (f (Expression ann f)) (Type ann)
 deriving instance (Eq (Type ann), Eq (Ref ann), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq)
@@ -41,8 +43,8 @@ class ReferenceAnnotation (Ref ann) => Annotations ann where
   type Ref ann :: *
   withType :: String -> Type ann -> String
 
-data Untyped
 data Unchecked
+data Checking
 data Checked
 
 
@@ -51,32 +53,30 @@ data Checked
 data Primitive = Integer | Float
   deriving (Eq, Ord)
 
-data ConcreteType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t
-  deriving (Eq, Ord)
-
-instance Annotations Untyped where
-  data Type Untyped = Untyped
-  type Ref Untyped = ()
-  withType = const
+data DataType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t | Polymorphic Identifier
+  deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 instance Annotations Unchecked where
-  data Type Unchecked = Free Identifier | Bound Identifier | Known (ConcreteType (Type Unchecked))
-  type Ref Unchecked = ReferenceKind
+  data Type Unchecked = Untyped
+  type Ref Unchecked = ()
+  withType = const
+
+instance Annotations Checking where
+  data Type Checking = Free Identifier | Bound (DataType (Type Checking))
+  type Ref Checking = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
 
 instance Annotations Checked where
-  data Type Checked = Polymorphic Identifier | Monomorphic (ConcreteType (Type Checked)) deriving (Eq, Ord)
+  data Type Checked = Checked (DataType (Type Checked)) deriving (Eq, Ord)
   type Ref Checked = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
 
-instance Show (Type Unchecked) where
+instance Show (Type Checking) where
   show (Free name) = "*" ++ show name
-  show (Bound name) = show name
-  show (Known ty) = show ty
+  show (Bound ty) = show ty
 
 instance Show (Type Checked) where
-  show (Polymorphic name) = show name
-  show (Monomorphic ty) = show ty
+  show (Checked ty) = show ty
 
 
 -- * References
@@ -114,7 +114,7 @@ instance (Comonad f, Annotations ann) => Show (Expression ann f) where
   show (Literal lit) = show lit
   show (Reference kind name rep ty) = showRef kind name `withType` ty `withType` rep -- TODO: include arity
   show (Lambda args value) = "\\" ++ unwords (map (show . extract) args) ++ " -> " ++ show (extract value)
-  show (Apply expr arg) = show (extract expr) ++ " (" ++ show (extract arg) ++ ")"
+  show (Apply expr arg ty) = "((" ++ show (extract expr) ++ ") (" ++ show (extract arg) ++ ")" `withType` ty ++ ")"
 
 instance Annotations ann => Show (Arg ann) where
   show (Arg name ty) = show name `withType` ty
@@ -123,7 +123,7 @@ instance Show Literal where
   show (IntegerLiteral a) = show a
   show (FloatLiteral a) = show a
 
-instance Show t => Show (ConcreteType t) where
+instance Show t => Show (DataType t) where
   show (Unboxed ty) = show ty
   show (Boxed ty) = "{" ++ show ty ++ "}"
   show (ADT name) = show name
@@ -142,7 +142,23 @@ types _ (Literal lit) = pure $ Literal lit
 types f (Reference kind name rep ty) = Reference kind name <$> f rep <*> f ty
 types f (Lambda args expr) = Lambda <$> traverse (traverse $ argType f) args <*> traverse (types f) expr where
   argType f (Arg name ty) = Arg name <$> f ty
-types f (Apply fun arg) = Apply <$> traverse (types f) fun <*> traverse (types f) arg
+types f (Apply fun arg ty) = Apply <$> traverse (types f) fun <*> traverse (types f) arg <*> f ty
+
+replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
+replaceType from = set $ types . filtered (== from)
+
+freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
+freeTypes genVar = types . fix $ \recurse -> \case
+  Checked (Polymorphic _) -> Free <$> genVar
+  Checked ty -> Bound <$> traverse recurse ty
+
+bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
+bindTypes genVar = types . fix $ \recurse -> \case
+  Free _ -> Checked . Polymorphic <$> genVar
+  Bound ty -> Checked <$> traverse recurse ty
+
+uncheck :: Type Checked -> Type Checking
+uncheck (Checked ty) = Bound $ uncheck <$> ty
 
 -- prims :: Traversal' Type Type
 -- prims f (Function rep a b) = Function rep <$> prims f a <*> prims f b

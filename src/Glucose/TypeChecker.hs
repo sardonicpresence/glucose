@@ -37,28 +37,28 @@ mkTypeChecker defs = do
 
 type TypeCheck f m a = (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => StateT (TypeChecker f) m a
 
-typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Untyped f -> m (Module Checked f)
+typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Unchecked f -> m (Module Checked f)
 typeCheck (Module defs) = evalStateT (typeCheckModule $ Module defs) =<< mkTypeChecker defs
 
-typeCheckModule :: Module Untyped f -> TypeCheck f m (Module Checked f)
+typeCheckModule :: Module Unchecked f -> TypeCheck f m (Module Checked f)
 typeCheckModule (Module defs) = fmap Module . for defs $ \def -> do
     existing <- uses namespace . lookupDefinition . identify $ extract def
     maybe (typeCheckDefinition def) pure existing
 
-typeCheckDefinition :: f (Definition Untyped f) -> TypeCheck f m (f (Definition Checked f))
+typeCheckDefinition :: f (Definition Unchecked f) -> TypeCheck f m (f (Definition Checked f))
 typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
   Definition name value -> do
     recursive <- uses checking . elem $ extract name
     when recursive . throwError $ RecursiveDefinition name
     startChecking $ extract name
     -- nextVar .= mkVarGen
-    Definition name <$> typeCheckExpression value
+    (Definition name <$>) . traverse (bindTypes newVar) =<< typeCheckExpression value
   Constructor name typeName index -> do
     let key = (extract typeName, index)
     modifyingM constructors . Map.insertOr key typeName $ duplicateDefinition typeName
     pure $ Constructor name typeName index
 
-typeCheckExpression :: f (Expression Untyped f) -> TypeCheck f m (f (Expression Checked f))
+typeCheckExpression :: f (Expression Unchecked f) -> TypeCheck f m (f (Expression Checking f))
 typeCheckExpression expr = for expr $ \case
   Literal literal -> pure $ Literal literal
   Reference _ identifier _ _ -> do
@@ -83,21 +83,21 @@ typeCheckIdentifier variable = do
   referenced <- uses unchecked . Map.lookup $ extract variable
   maybe (throwError $ UnrecognisedVariable variable) (referenceTo . extract <=< typeCheckDefinition) referenced
 
-typeCheckArg :: Arg Untyped -> TypeCheck f m (Arg Checked)
-typeCheckArg (Arg name _) = Arg name . Bound <$> newVar
+typeCheckArg :: Arg Unchecked -> TypeCheck f m (Arg Checked)
+typeCheckArg (Arg name _) = Arg name . Checked . Polymorphic <$> newVar
 
 unify :: (Comonad f, MonadError (TypeCheckError f) m)
- => f (Type Checked) -> f (Type Checked)
- -> m (Expression Checked f -> Expression Checked f, Expression Checked f -> Expression Checked f)
+ => f (Type Checking) -> f (Type Checking)
+ -> m (Expression Checking f -> Expression Checking f, Expression Checking f -> Expression Checking f)
 unify ty1 ty2 = go (extract ty1) (extract ty2) where
-  go (Function _ f a) (Function _ g b) = do
+  go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
     (h1, h2) <- unify (f <$ ty1) (g <$ ty2)
     (i1, i2) <- unify (a <$ ty1) (b <$ ty2)
     pure (i1 . h1, i2 . h2)
-  -- go ty (Free name) = pure (id, bindType name ty)
-  -- go (Free name) ty = pure (bindType name ty, id)
-  go ty (Bound name) = pure (id, rebindType name ty)
-  go (Bound name) ty = pure (rebindType name ty, id)
+  go a b@Free{} = pure (id, replaceType b a)
+  go a@Free{} b = pure (replaceType a b, id)
+  go a b@(Bound Polymorphic{}) = pure (id, replaceType b a)
+  go a@(Bound Polymorphic{}) b = pure (replaceType a b, id)
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2
   go _ _ = pure (id, id)
 
@@ -135,12 +135,12 @@ newVar = nextVar %%= genVar
 functionOf :: Type Checked -> Type Checked
 functionOf a = Function UnknownArity a . Free $ Identifier "_"
 
-referenceVariable :: Variable f -> TypeCheck f m (Expression Checked f)
+referenceVariable :: Variable f -> TypeCheck f m (Expression Checking f)
 referenceVariable (NS.Definition def) = referenceTo $ extract def
 referenceVariable (NS.Arg arg) = pure . referenceArg $ extract arg
 
-referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checked f)
+referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checking f)
 referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def) (typeOf def)
 
-referenceArg :: Arg Checked -> Expression Checked f
-referenceArg (Arg name ty) = Reference Local name ty ty
+referenceArg :: Arg Checked -> Expression Checking f
+referenceArg (Arg name ty) = Reference Local name (uncheck ty) (uncheck ty)
