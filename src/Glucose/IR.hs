@@ -2,14 +2,13 @@
 module Glucose.IR
 (
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
-  Annotations(..), ReferenceAnnotation(..), Untyped, Unchecked, Checked, Type(..),
+  Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  Typed(..), types, replaceType, checkedType, uncheckedType
+  Typed(..), types, replaceType, freeTypes, freeType, bindTypes, bindType, checkingType, uncheckedType, boxed
 )
 where
 
 import Control.Comonad
-import Control.Comonad.Utils
 import Control.Lens
 import Data.List
 import Glucose.Identifier
@@ -43,8 +42,8 @@ class ReferenceAnnotation (Ref ann) => Annotations ann where
   withType :: String -> Type ann -> String
   dataType :: DataType (Type ann) -> Type ann
 
-data Untyped
 data Unchecked
+data Checking
 data Checked
 
 
@@ -73,30 +72,30 @@ data Arity = UnknownArity | Arity Int deriving (Eq, Ord)
 data DataType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t | Polymorphic Identifier
   deriving (Eq, Ord, Functor, Foldable, Traversable)
 
-instance Annotations Untyped where
-  data Type Untyped = Untyped
-  type Ref Untyped = ()
+instance Annotations Unchecked where
+  data Type Unchecked = Untyped deriving (Eq)
+  type Ref Unchecked = ()
   withType = const
   dataType = const Untyped
 
-instance Annotations Unchecked where
-  data Type Unchecked = Free Identifier | Bound (DataType (Type Unchecked))
-  type Ref Unchecked = ReferenceKind
+instance Annotations Checking where
+  data Type Checking = Free Identifier | Bound (DataType (Type Checking)) deriving (Eq)
+  type Ref Checking = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
   dataType = Bound
 
 instance Annotations Checked where
-  newtype Type Checked = Known (DataType (Type Checked)) deriving (Eq, Ord)
+  newtype Type Checked = Checked (DataType (Type Checked)) deriving (Eq, Ord)
   type Ref Checked = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
-  dataType = Known
+  dataType = Checked
 
-instance Show (Type Unchecked) where
+instance Show (Type Checking) where
   show (Free name) = "*" ++ show name
   show (Bound ty) = show ty
 
 instance Show (Type Checked) where
-  show (Known ty) = show ty
+  show (Checked ty) = show ty
 
 instance Show Arity where
   show _ = "->"
@@ -104,25 +103,43 @@ instance Show Arity where
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
--- _Free :: Prism' (Type Unchecked) Identifier
+-- _Free :: Prism' (Type Checking) Identifier
 -- _Free = prism' Free $ \case Free a -> Just a; _ -> Nothing
 --
--- _Bound :: Prism' (Type Unchecked) Identifier
+-- _Bound :: Prism' (Type Checking) Identifier
 -- _Bound = prism' Bound $ \case Bound a -> Just a; _ -> Nothing
 --
--- _Known :: Prism' (Type Unchecked) (ConcreteType (Type Unchecked))
--- _Known = prism' Known $ \case Known a -> Just a; _ -> Nothing
+-- _Checked :: Prism' (Type Checking) (ConcreteType (Type Checking))
+-- _Checked = prism' Checked $ \case Checked a -> Just a; _ -> Nothing
 
 replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
 replaceType from to = types . filtered (== from) .~ {- boxed -} to
 
-checkedType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checked)
-checkedType newName ty = Known <$> case ty of
-  Free _ -> Polymorphic <$> newName
-  Bound ty -> traverse (checkedType newName) ty
+freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
+freeTypes = types . freeType
 
-uncheckedType :: Type Checked -> Type Unchecked
-uncheckedType (Known ty) = Bound $ uncheckedType <$> ty
+freeType :: Applicative f => f Identifier -> Type Checked -> f (Type Checking)
+freeType newName = \case
+  Checked Polymorphic{} -> Free <$> newName
+  Checked ty -> Bound <$> traverse (freeType newName) ty
+
+bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
+bindTypes = types . bindType
+
+bindType :: Applicative f => f Identifier -> Type Checking -> f (Type Checked)
+bindType newName ty = Checked <$> case ty of
+  Free _ -> Polymorphic <$> newName
+  Bound ty -> traverse (bindType newName) ty
+
+checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
+checkingType newName Untyped = Free <$> newName
+
+uncheckedType :: Type Checked -> Type Checking
+uncheckedType (Checked ty) = Bound $ uncheckedType <$> ty
+
+boxed :: DataType ty -> DataType ty
+boxed (Unboxed ty) = Boxed ty
+boxed a = a
 
 
 -- * Show instances

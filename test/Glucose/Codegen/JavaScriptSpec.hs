@@ -19,9 +19,9 @@ spec = describe "JavaScript codegen" $ do
       "a = 123\nb = 3.21\n"
   it "compiles global aliases correctly" $
     let input =
-          [ aliasAnywhere "a" "b" Integer -- Alias to as-yet-undefined alias
-          , aliasAnywhere "b" "c" Integer -- Alias to external definition
-          , aliasAnywhere "d" "e" Integer -- Alias to as-yet-undefined constructor
+          [ aliasAnywhere "a" "b" $ Unboxed Integer -- Alias to as-yet-undefined alias
+          , aliasAnywhere "b" "c" $ Unboxed Integer -- Alias to external definition
+          , aliasAnywhere "d" "e" $ Unboxed Integer -- Alias to as-yet-undefined constructor
           , constructorAnywhere "test" "e" 0 ]
      in codegenDefinitions input `shouldShow` "b = c\na = b\ntest = function() {}\ne = new test()\nd = e\n"
   it "compiles enum constructors correctly" $

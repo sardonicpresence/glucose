@@ -7,4 +7,4 @@ import Data.Text
 import Glucose.IR
 
 alias :: (Comonad f, Applicative f) => f Text -> f Text -> f (Definition Unchecked f)
-alias to from = definition to $ reference UnknownKind from Unknown
+alias to from = definition to $ reference () from Untyped

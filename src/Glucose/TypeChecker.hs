@@ -37,28 +37,28 @@ mkTypeChecker defs = do
 
 type TypeCheck f m a = (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => StateT (TypeChecker f) m a
 
-typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Untyped f -> m (Module Checked f)
+typeCheck :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => Module Unchecked f -> m (Module Checked f)
 typeCheck (Module defs) = evalStateT (typeCheckModule $ Module defs) =<< mkTypeChecker defs
 
-typeCheckModule :: Module Untyped f -> TypeCheck f m (Module Checked f)
+typeCheckModule :: Module Unchecked f -> TypeCheck f m (Module Checked f)
 typeCheckModule (Module defs) = fmap Module . for defs $ \def -> do
     existing <- uses namespace . lookupDefinition . identify $ extract def
     maybe (typeCheckDefinition def) pure existing
 
-typeCheckDefinition :: f (Definition Untyped f) -> TypeCheck f m (f (Definition Checked f))
+typeCheckDefinition :: f (Definition Unchecked f) -> TypeCheck f m (f (Definition Checked f))
 typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
   Definition name value -> do
     recursive <- uses checking . elem $ extract name
     when recursive . throwError $ RecursiveDefinition name
     startChecking $ extract name
     -- nextVar .= mkVarGen
-    Definition name <$> typeCheckExpression value
+    Definition name <$> (traverse (bindTypes newVar) =<< typeCheckExpression value)
   Constructor name typeName index -> do
     let key = (extract typeName, index)
     modifyingM constructors . Map.insertOr key typeName $ duplicateDefinition typeName
     pure $ Constructor name typeName index
 
-typeCheckExpression :: f (Expression Untyped f) -> TypeCheck f m (f (Expression Checked f))
+typeCheckExpression :: f (Expression Unchecked f) -> TypeCheck f m (f (Expression Checking f))
 typeCheckExpression expr = for expr $ \case
   Literal literal -> pure $ Literal literal
   Reference _ identifier _ _ -> do
@@ -67,72 +67,37 @@ typeCheckExpression expr = for expr $ \case
   Lambda args def -> do
     typeCheckedArgs <- traverse (traverse typeCheckArg) args
     pushArgs typeCheckedArgs
-    retType <- Bound <$> newVar
-    def' <- fmap (types %~ uncheckedType) <$> typeCheckExpression def
-    def'' <- (<$> def') . snd <$> unify (typeOf <$> def') (retType <$ def)
-    def''' <- traverse (types $ checkedType newVar) def''
-    pure $ Lambda typeCheckedArgs def'''
+    Lambda typeCheckedArgs <$> typeCheckExpression def
   Apply expr arg ty -> do
-    expr' <- fmap (types %~ uncheckedType) <$> typeCheckExpression expr
-    arg' <- fmap (types %~ uncheckedType) <$> typeCheckExpression arg
-    (f, g) <- unify (typeOf <$> expr') (Function UnknownArity . typeOf <$> arg' <*> pure ty)
-    pure $ Apply (f <$> expr') (g <$> arg')
+    expr' <- typeCheckExpression expr
+    arg' <- typeCheckExpression arg
+    ty' <- checkingType newVar ty
+    (f, g) <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
+    pure $ Apply (f <$> expr') (g <$> arg') ty'
 
+functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
+functionReturning returnType argType = dataType $ Function UnknownArity argType returnType
 
-functionOf :: Type Checked -> Type Checked
-functionOf a = Function UnknownArity a . Free $ Identifier "_"
-
-typeCheckIdentifier :: f Identifier -> TypeCheck f m (Expression Checked f)
+typeCheckIdentifier :: f Identifier -> TypeCheck f m (Expression Checking f)
 typeCheckIdentifier variable = do
   referenced <- uses unchecked . Map.lookup $ extract variable
   maybe (throwError $ UnrecognisedVariable variable) (referenceTo . extract <=< typeCheckDefinition) referenced
 
-typeCheckArg :: Arg Untyped -> TypeCheck f m (Arg Checked)
-typeCheckArg (Arg name _) = Arg name . Polymorphic <$> newVar
+typeCheckArg :: Arg Unchecked -> TypeCheck f m (Arg Checking)
+typeCheckArg (Arg name _) = Arg name . Bound . Polymorphic <$> newVar
 
-unifyUnchecked :: (Comonad f, MonadError (TypeCheckError f) m)
- => f (Type Unchecked) -> f (Type Unchecked)
- -> m (Expression Unchecked f -> Expression Unchecked f, Expression Unchecked f -> Expression Unchecked f)
-unifyUnchecked ty1 ty2 = go (extract ty1) (extract ty2) where
-  go ty (Free name) = pure (id, replaceType (Free name) ty)
-  go (Free name) ty = pure (replaceType (Free name) ty, id)
-  go (Bound a) (Bound b) = bimap _Bound _Bound $ unify a b
-  -- go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
-  --   (h1, h2) <- unifyUnchecked (f <$ ty1) (g <$ ty2)
-  --   (i1, i2) <- unifyUnchecked (a <$ ty1) (b <$ ty2)
-  --   pure (i1 . h1, i2 . h2)
-  -- go ty (Bound (Polymorphic name)) = pure (id, replaceType (Bound (Polymorphic name)) ty)
-  -- go (Bound (Polymorphic name)) ty = pure (replaceType (Bound (Polymorphic name)) ty, id)
-  -- go a b | a /= b = throwError $ TypeMismatch ty1 ty2
-  -- go _ _ = pure (id, id)
+type Unification f = Expression Checking f -> Expression Checking f
 
-unifyChecked :: (Comonad f, MonadError (TypeCheckError f) m)
- => f (Type Checked) -> f (Type Checked)
- -> m (Expression Checked f -> Expression Checked f, Expression Checked f -> Expression Checked f)
-unifyChecked ty1 ty2 = go (extract ty1) (extract ty2) where
-  go (Known (Function _ f a)) (Known (Function _ g b)) = do
-    (h1, h2) <- unifyChecked (f <$ ty1) (g <$ ty2)
-    (i1, i2) <- unifyChecked (a <$ ty1) (b <$ ty2)
-    pure (i1 . h1, i2 . h2)
-  go ty (Known (Polymorphic name)) = pure (id, replaceType (Known (Polymorphic name)) ty)
-  go (Known (Polymorphic name)) ty = pure (replaceType (Known (Polymorphic name)) ty, id)
-  go a b | a /= b = throwError $ TypeMismatch (uncheckedType <$> ty1) (uncheckedType <$> ty2)
-  go _ _ = pure (id, id)
-
-replace :: Type ann -> Type ann -> Type ann -> Type ann
-replace from to a | a == from = to
-replace _ _ a = a
-
--- unify :: (Comonad f, MonadError (TypeCheckError f) m)
---  => f (DataType t) -> f (DataType t)
---  -> m (Expression Unchecked f -> Expression Unchecked f, Expression Unchecked f -> Expression Unchecked f)
-unify' ty1 ty2 = go (extract ty1) (extract ty2) where
-  go (Function _ f a) (Function _ g b) = do
+unify :: f (Type Checking) -> f (Type Checking) -> TypeCheck f m (Unification f, Unification f)
+unify ty1 ty2 = go (extract ty1) (extract ty2) where
+  go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
     (h1, h2) <- unify (f <$ ty1) (g <$ ty2)
     (i1, i2) <- unify (a <$ ty1) (b <$ ty2)
     pure (i1 . h1, i2 . h2)
-  go a b@Polymorphic{} = pure (id, replace b a)
-  go a@Polymorphic{} ty = pure (replace a b, id)
+  go a b@Free{} = pure (id, replaceType b a)
+  go a@Free{} b = pure (replaceType a b, id)
+  go a b@(Bound Polymorphic{}) = pure (id, replaceType b a)
+  go a@(Bound Polymorphic{}) b = pure (replaceType a b, id)
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2
   go _ _ = pure (id, id)
 
@@ -144,7 +109,7 @@ checked name = do
   checking %= Set.delete name
   unchecked %= Map.delete name
 
-pushArgs :: [f (Arg Checked)] -> TypeCheck f m ()
+pushArgs :: [f (Arg Checking)] -> TypeCheck f m ()
 pushArgs args = modifyingM namespace $ \ns ->
   foldM (flip $ handlingDuplicates declareArg) (pushScope ns) args
 
@@ -167,12 +132,12 @@ duplicateDefinition new = throwError . DuplicateDefinition (identifier new) . vo
 newVar :: TypeCheck f m Identifier
 newVar = nextVar %%= genVar
 
-referenceVariable :: Variable f -> TypeCheck f m (Expression Checked f)
+referenceVariable :: Variable f -> TypeCheck f m (Expression Checking f)
 referenceVariable (NS.Definition def) = referenceTo $ extract def
 referenceVariable (NS.Arg arg) = pure . referenceArg $ extract arg
 
-referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checked f)
+referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checking f)
 referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def) (typeOf def)
 
-referenceArg :: Arg Checked -> Expression Checked f
+referenceArg :: Arg Checking -> Expression Checking f
 referenceArg (Arg name ty) = Reference Local name ty ty

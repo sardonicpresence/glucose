@@ -6,9 +6,9 @@ import Glucose.AST as AST
 import Glucose.Identifier
 import Glucose.IR as IR
 
-type Desugared f t = f (t Untyped f)
+type Desugared f t = f (t Unchecked f)
 
-desugar :: (Comonad f, Applicative m, Traversable m) => AST.Module f -> m (IR.Module Untyped f)
+desugar :: (Comonad f, Applicative m, Traversable m) => AST.Module f -> m (IR.Module Unchecked f)
 desugar (AST.Module defs) = IR.Module . concat <$> traverse definition defs
 
 definition :: (Comonad f, Applicative m, Traversable m) => f (AST.Definition f) -> m [Desugared f IR.Definition]
@@ -19,16 +19,16 @@ definition def = case extract def of
 constructor :: (Comonad f, Applicative m) => f Identifier -> Int -> f Identifier -> m (Desugared f IR.Definition)
 constructor typeName n ctor = pure $ ctor $> IR.Constructor ctor typeName n
 
-expression :: (Comonad f, Applicative m, Traversable m) => AST.Expression f -> m (IR.Expression Untyped f)
+expression :: (Comonad f, Applicative m, Traversable m) => AST.Expression f -> m (IR.Expression Unchecked f)
 expression (AST.Value a) = value a
 expression (AST.Apply f a) = IR.Apply <$> mapC expression f <*> mapC value a <*> pure Untyped
 
-value :: (Applicative m, Traversable m) => Comonad f => AST.Value f -> m (IR.Expression Untyped f)
+value :: (Applicative m, Traversable m) => Comonad f => AST.Value f -> m (IR.Expression Unchecked f)
 value (AST.Literal lit) = IR.Literal <$> literal lit
 value (AST.Variable name) = pure $ IR.Reference () name Untyped Untyped
 value (AST.Lambda args expr) = IR.Lambda <$> traverse (mapC arg) args <*> mapC expression expr
 
-arg :: Applicative m => Identifier -> m (IR.Arg Untyped)
+arg :: Applicative m => Identifier -> m (IR.Arg Unchecked)
 arg a = pure $ IR.Arg a Untyped
 
 literal :: Applicative m => AST.Literal -> m IR.Literal

@@ -13,7 +13,7 @@ import Data.Map.Strict as Map
 import qualified Glucose.IR as IR
 import Glucose.Identifier
 
-type Arg = IR.Arg IR.Checked
+type Arg = IR.Arg IR.Checking
 type Definition = IR.Definition IR.Checked
 
 data Variable f = Arg (f Arg) | Definition (f (Definition f))

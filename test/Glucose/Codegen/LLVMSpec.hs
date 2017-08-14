@@ -22,7 +22,7 @@ spec = describe "LLVM codegen" $ do
       [LLVM.VariableDefinition (Name "a") LLVM.External (i32 123),
        LLVM.VariableDefinition (Name "b") LLVM.External (f64 3.21)]
   it "compiles global aliases correctly" $
-    codegenDefinitions [aliasAnywhere "a" "b" Integer] `shouldBe`
+    codegenDefinitions [aliasAnywhere "a" "b" $ Unboxed Integer] `shouldBe`
       [LLVM.Alias (Name "a") (GlobalReference (Name "b") (LLVM.I 32)) (LLVM.I 32)]
   it "compiles enum constructors correctly" $
     codegenDefinitions [constructorAnywhere "test" "a" 0, constructorAnywhere "test" "B" 1] `shouldBe`

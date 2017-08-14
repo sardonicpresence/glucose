@@ -7,7 +7,7 @@ data TypeCheckError f
   = DuplicateDefinition (f Identifier) (f ())
   | UnrecognisedVariable (f Identifier)
   | RecursiveDefinition (f Identifier)
-  | TypeMismatch (f (Type Unchecked)) (f (Type Unchecked))
+  | TypeMismatch (f (Type Checking)) (f (Type Checking))
 
-deriving instance (Eq (f Identifier), Eq (f ()), Eq (f (Type Unchecked))) => Eq (TypeCheckError f)
-deriving instance (Show (f Identifier), Show (f ()), Show (f (Type Unchecked))) => Show (TypeCheckError f)
+deriving instance (Eq (f Identifier), Eq (f ()), Eq (f (Type Checking))) => Eq (TypeCheckError f)
+deriving instance (Show (f Identifier), Show (f ()), Show (f (Type Checking))) => Show (TypeCheckError f)

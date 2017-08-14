@@ -79,10 +79,10 @@ expression (Reference Local (Identifier (mkName -> name)) rep _) = pure $ LLVM.L
 expression (Reference Global (Identifier (mkName -> name)) rep _) =
   let ref = LLVM.GlobalReference name (llvmType rep)
    in case rep of
-        IR.Function{} -> pure ref
+        Checked IR.Function{} -> pure ref
         _ -> load ref
 expression (Lambda args def) = withNewGlobal $ \name -> buildLambda name Private (map extract args) (extract def)
-expression (Apply (extract -> f) (extract -> args)) = case flattenApply f args of
+expression (Apply (extract -> f) (extract -> args) _) = case flattenApply f args of
   Application rep root calls partial -> maybe full partialApply partial where
     full = do
       fn <- expression root
@@ -182,31 +182,34 @@ bitcastFunctionRef a@(LLVM.GlobalReference _ LLVM.Function{}) = ConstConvert LLV
 bitcastFunctionRef a = a
 
 repType :: IR.Type -> IR.Type -> IR.Type
-repType Bound{} ty = ty
+repType (Checked Polymorphic{}) ty = ty
 repType rep _ = rep
 
 applicationResult :: IR.Type -> IR.Type -> [IR.Expression f] -> (IR.Type, IR.Type)
 applicationResult = go where
   go rep ty [] = (repType rep ty, ty)
-  go rep ty (_:as) = applicationResult (IR.returnType $ repType rep ty) (IR.returnType ty) as
+  go rep ty (_:as) = applicationResult (retType $ repType rep ty) (retType ty) as
+
+retType :: IR.Type -> IR.Type
+retType = undefined
 
 literal :: IR.Literal -> LLVM.Expression
 literal (IR.IntegerLiteral n) = i32 n
 literal (IR.FloatLiteral n) = f64 n
 
 llvmType :: IR.Type -> LLVM.Type
-llvmType Integer = LLVM.I 32
-llvmType Float = LLVM.F64
-llvmType (Boxed _) = box
-llvmType Bound{} = box
-llvmType Free{} = error "Free variable left for code-generator!"
-llvmType (ADT _) = LLVM.I 32
-llvmType (IR.Function UnknownArity _ _) = fn
-llvmType (IR.Function (Arity n) (varType . llvmType -> from) (llvmType -> to)) = case to of
-  LLVM.Function f as -> if n == 1
-    then LLVM.Function box [from]
-    else LLVM.Function f (from : as)
-  f -> LLVM.Function f [from]
+llvmType (Checked ty) = case ty of
+  Unboxed Integer -> LLVM.I 32
+  Unboxed Float -> LLVM.F64
+  Boxed{} -> box
+  Polymorphic{} -> box
+  ADT{} -> LLVM.I 32
+  IR.Function UnknownArity _ _ -> fn
+  IR.Function (Arity n) (varType . llvmType -> from) (llvmType -> to) -> case to of
+    LLVM.Function f as -> if n == 1
+      then LLVM.Function box [from]
+      else LLVM.Function f (from : as)
+    f -> LLVM.Function f [from]
 
 varType :: LLVM.Type -> LLVM.Type -- TODO: repType . typeRep
 varType LLVM.Function{} = box

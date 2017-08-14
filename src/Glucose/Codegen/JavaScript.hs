@@ -81,7 +81,7 @@ expression (Lambda args expr) = do
     "function(" <> intercalate ", " (map (arg . extract) args) <> ") {" <>
     " return " <> expr <> " " <>
     "}"
-expression (Apply (extract -> f) (extract -> a)) = case flattenApply f a of
+expression (Apply (extract -> f) (extract -> a) _) = case flattenApply f a of
   Application _ root calls partial -> maybe fullApply partialApply partial where
     fullApply = foldl (<>) <$> expression root <*> traverse (fmap parenList . traverse expression) calls
     -- TODO: variable names can conflict with variables from outer scopes
@@ -95,7 +95,7 @@ typeDefinition :: Identifier -> Text
 typeDefinition (Identifier typeName) = typeName <> " = function() {}\n"
 
 arity :: Type -> Int
-arity (Function (Arity n) _ _) = n
+arity (Checked (Function (Arity n) _ _)) = n
 arity _ = 0
 
 -- TODO: need to build lambdas to coerce function arguments to the expected arity
