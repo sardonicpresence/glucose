@@ -18,6 +18,7 @@ import Glucose.IR
 import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
 import Glucose.TypeChecker.TypeCheckError
+import Glucose.TypeChecker.Unify
 import Glucose.VarGen
 
 data TypeChecker f = TypeChecker
@@ -71,8 +72,8 @@ typeCheckExpression expr = for expr $ \case
     expr' <- typeCheckExpression expr
     arg' <- typeCheckExpression arg
     ty' <- checkingType newVar ty
-    (f, g) <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
-    pure $ Apply (f <$> expr') (g <$> arg') ty'
+    unifier <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
+    pure $ Apply (expr' <&> types %~ unifier) (arg' <&> types %~ unifier) (unifier ty')
 
 functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
 functionReturning returnType argType = dataType $ Function UnknownArity argType returnType
@@ -84,21 +85,6 @@ typeCheckIdentifier variable = do
 
 typeCheckArg :: Arg Unchecked -> TypeCheck f m (Arg Checking)
 typeCheckArg (Arg name _) = Arg name . Bound . Polymorphic <$> newVar
-
-type Unification f = Expression Checking f -> Expression Checking f
-
-unify :: f (Type Checking) -> f (Type Checking) -> TypeCheck f m (Unification f, Unification f)
-unify ty1 ty2 = go (extract ty1) (extract ty2) where
-  go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
-    (h1, h2) <- unify (f <$ ty1) (g <$ ty2)
-    (i1, i2) <- unify (a <$ ty1) (b <$ ty2)
-    pure (i1 . h1, i2 . h2)
-  go a b@Free{} = pure (id, replaceType b a)
-  go a@Free{} b = pure (replaceType a b, id)
-  go a b@(Bound Polymorphic{}) = pure (id, replaceType b a)
-  go a@(Bound Polymorphic{}) b = pure (replaceType a b, id)
-  go a b | a /= b = throwError $ TypeMismatch ty1 ty2
-  go _ _ = pure (id, id)
 
 startChecking :: Identifier -> TypeCheck f m ()
 startChecking name = checking %= Set.insert name

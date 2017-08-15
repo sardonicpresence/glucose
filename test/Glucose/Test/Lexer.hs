@@ -2,21 +2,15 @@ module Glucose.Test.Lexer where
 
 import Data.List as List
 import Data.Ratio ((%))
-import Data.String (fromString)
 import Data.Text as Text
-import Glucose.Identifier (Identifier)
 import Glucose.Lexer.Char
 import Glucose.Lexer.Reversible
 import Glucose.Source
+import Glucose.Test.Identifier (Identifier)
 import Glucose.Token
 import Numeric
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
-
-instance Arbitrary Identifier where
-  arbitrary = fmap fromString . (:)
-    <$> arbitrary `suchThat` (\c -> isIdentifier c && not (isDigit c))
-    <*> listOf (arbitrary `suchThat` isIdentifier)
 
 instance Arbitrary Keyword where
   arbitrary = oneof [ pure Type ]
