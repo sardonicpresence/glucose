@@ -4,13 +4,15 @@ module Glucose.IR
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  Typed(..), types, replaceType, freeTypes, freeType, bindTypes, bindType, checkingType, uncheckedType, boxed
+  Typed(..), types, replaceType, remap, free, freeTypes, bind, bindTypes, checkingType, uncheckedType, boxed
 )
 where
 
 import Control.Comonad
 import Control.Lens
 import Data.List
+import Data.Maybe
+import Data.Traversable (for)
 import Glucose.Identifier
 
 newtype Module ann f = Module [f (Definition ann f)]
@@ -103,33 +105,23 @@ instance Show Arity where
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
--- _Free :: Prism' (Type Checking) Identifier
--- _Free = prism' Free $ \case Free a -> Just a; _ -> Nothing
---
--- _Bound :: Prism' (Type Checking) Identifier
--- _Bound = prism' Bound $ \case Bound a -> Just a; _ -> Nothing
---
--- _Checked :: Prism' (Type Checking) (ConcreteType (Type Checking))
--- _Checked = prism' Checked $ \case Checked a -> Just a; _ -> Nothing
+{- | Traversal mapping checked type variables to free type variables. -}
+free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
+free f (Checked (Polymorphic name)) = Free <$> f name
+free f (Checked (Function arity a b)) = Bound <$> (Function arity <$> free f a <*> free f b)
+free f (Checked ty) = Bound <$> traverse (free f) ty
 
-replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
-replaceType from to = types . filtered (== from) .~ {- boxed -} to
+{- | Traversal mapping free type variables to checked type variables. -}
+bind :: Traversal (Type Checking) (Type Checked) Identifier Identifier
+bind f (Free name) = Checked . Polymorphic <$> f name
+bind f (Bound (Function arity a b)) = Checked <$> (Function arity <$> bind f a <*> bind f b)
+bind f (Bound ty) = Checked <$> traverse (bind f) ty
 
-freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
-freeTypes = types . freeType
-
-freeType :: Applicative f => f Identifier -> Type Checked -> f (Type Checking)
-freeType newName = \case
-  Checked Polymorphic{} -> Free <$> newName
-  Checked ty -> Bound <$> traverse (freeType newName) ty
-
-bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
-bindTypes = types . bindType
-
-bindType :: Applicative f => f Identifier -> Type Checking -> f (Type Checked)
-bindType newName ty = Checked <$> case ty of
-  Free _ -> Polymorphic <$> newName
-  Bound ty -> traverse (bindType newName) ty
+remap :: Applicative m => Traversal from to Identifier Identifier -> m Identifier -> from -> m to
+remap remapping newName from = do
+  let names = nub $ from ^.. getting remapping
+  subs <- for names $ \name -> (name, ) <$> newName
+  pure $ from & remapping %~ \a -> fromMaybe a $ lookup a subs
 
 checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
 checkingType newName Untyped = Free <$> newName
@@ -207,6 +199,15 @@ types f (Reference kind name rep ty) = Reference kind name <$> f rep <*> f ty
 types f (Lambda args expr) = Lambda <$> traverse (traverse $ argType f) args <*> traverse (types f) expr where
   argType f (Arg name ty) = Arg name <$> f ty
 types f (Apply fun arg ty) = Apply <$> traverse (types f) fun <*> traverse (types f) arg <*> f ty
+
+replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
+replaceType from to = types . filtered (== from) .~ {- boxed -} to -- TODO
+
+freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
+freeTypes = remap $ types . free
+
+bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
+bindTypes = remap $ types . bind
 
 
 -- * Bound instances

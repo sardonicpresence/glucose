@@ -20,6 +20,19 @@ instance Arbitrary ty => Arbitrary (DataType ty) where
 instance Arbitrary Primitive where
   arbitrary = oneof [ pure Integer, pure Float ]
 
+newtype Monomorphic = Monomorphic { monomorphic :: Type Checking }
+
+instance Show Monomorphic where
+  show (Monomorphic ty) = show ty
+
+instance Arbitrary Monomorphic where
+  arbitrary = Monomorphic . Bound <$> oneof
+    [ Unboxed <$> arbitrary
+    , Boxed <$> arbitrary
+    , ADT <$> arbitrary
+    , Function UnknownArity <$> fmap monomorphic arbitrary <*> fmap monomorphic arbitrary
+    ]
+
 isBound :: Type Checking -> Bool
 isBound Bound{} = True
 isBound _ = False
@@ -28,9 +41,3 @@ hasStructure :: Type Checking -> Bool
 hasStructure Free{} = False
 hasStructure (Bound Polymorphic{}) = False
 hasStructure _ = True
-
-isMonomorphic :: Type Checking -> Bool
-isMonomorphic Free{} = False
-isMonomorphic (Bound Polymorphic{}) = False
-isMonomorphic (Bound (Function _ f a)) = isMonomorphic f && isMonomorphic a
-isMonomorphic _ = True

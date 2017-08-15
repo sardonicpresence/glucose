@@ -1,6 +1,7 @@
 module Glucose.TypeChecker.Unify (unify) where
 
 import Control.Comonad
+import Control.Lens
 import Control.Monad.Except
 import Glucose.IR
 import Glucose.TypeChecker.TypeCheckError
@@ -15,9 +16,13 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
   go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
     j <- unify (f <$ ty1) (g <$ ty2)
     k <- unify (j a <$ ty1) (j b <$ ty2)
-    pure $ k . j
+    pure $ atomicTypes %~ k . j
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2
   go _ _ = pure id
+
+atomicTypes :: Traversal' (Type Checking) (Type Checking)
+atomicTypes f (Bound (Function arity a b)) = Bound <$> (Function arity <$> f a <*> f b)
+atomicTypes f ty = f ty
 
 replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking
 replace from to a = if a == from then to else a
