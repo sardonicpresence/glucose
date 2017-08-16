@@ -9,5 +9,5 @@ import Test.QuickCheck.Gen
 
 instance Arbitrary Identifier where
   arbitrary = fmap fromString . (:)
-    <$> arbitrary `suchThat` (\c -> isIdentifier c && not (isDigit c))
+    <$> arbitrary `suchThat` (\c -> isIdentifier c && not (isAlphaNum c)) -- Reserve single-character alpha identifiers for use in tests
     <*> listOf (arbitrary `suchThat` isIdentifier)

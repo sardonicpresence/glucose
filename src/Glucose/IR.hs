@@ -4,7 +4,8 @@ module Glucose.IR
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  Typed(..), types, replaceType, remap, free, freeTypes, bind, bindTypes, checkingType, uncheckedType, boxed
+  bound, free, bind, checkingType, uncheckedType, boxed,
+  Typed(..), types, replaceType, remap, freeTypes, bindTypes
 )
 where
 
@@ -105,6 +106,9 @@ instance Show Arity where
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
+bound :: Prism' (Type Checking) (DataType (Type Checking))
+bound = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
+
 {- | Traversal mapping checked type variables to free type variables. -}
 free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
 free f (Checked (Polymorphic name)) = Free <$> f name
@@ -201,7 +205,7 @@ types f (Lambda args expr) = Lambda <$> traverse (traverse $ argType f) args <*>
 types f (Apply fun arg ty) = Apply <$> traverse (types f) fun <*> traverse (types f) arg <*> f ty
 
 replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
-replaceType from to = types . filtered (== from) .~ {- boxed -} to -- TODO
+replaceType from to = types . filtered (== from) .~ to
 
 freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
 freeTypes = remap $ types . free

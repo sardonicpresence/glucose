@@ -13,7 +13,7 @@ desugar (AST.Module defs) = IR.Module . concat <$> traverse definition defs
 
 definition :: (Comonad f, Applicative m, Traversable m) => f (AST.Definition f) -> m [Desugared f IR.Definition]
 definition def = case extract def of
-  AST.Definition name expr _ -> pure . (def $>) . IR.Definition name <$> mapC expression expr
+  AST.Definition name expr _ -> pure . (def $>) . IR.Definition name <$> mapC expression expr -- TODO: don't throw away type!
   AST.TypeDefinition name ctors -> zipWithM (constructor name) [0..] ctors
 
 constructor :: (Comonad f, Applicative m) => f Identifier -> Int -> f Identifier -> m (Desugared f IR.Definition)

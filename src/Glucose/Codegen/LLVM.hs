@@ -191,7 +191,8 @@ applicationResult = go where
   go rep ty (_:as) = applicationResult (retType $ repType rep ty) (retType ty) as
 
 retType :: IR.Type -> IR.Type
-retType = undefined
+retType (Checked (IR.Function _ _ b)) = b
+retType _ = error "Non-function does not have a return type!"
 
 literal :: IR.Literal -> LLVM.Expression
 literal (IR.IntegerLiteral n) = i32 n

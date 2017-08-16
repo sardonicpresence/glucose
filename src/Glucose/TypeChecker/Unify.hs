@@ -13,16 +13,18 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
   go a@Free{} b = pure $ replace a b
   go a b@(Bound Polymorphic{}) = pure $ replace b a
   go a@(Bound Polymorphic{}) b = pure $ replace a b
-  go (Bound (Function _ f a)) (Bound (Function _ g b)) = do
-    j <- unify (f <$ ty1) (g <$ ty2)
-    k <- unify (j a <$ ty1) (j b <$ ty2)
-    pure $ atomicTypes %~ k . j
+  go (Bound (Function _ a b)) (Bound (Function _ c d)) = do
+    f <- unify (a <$ ty1) (c <$ ty2)
+    g <- unify (f b <$ ty1) (f d <$ ty2)
+    pure $ g . f
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2
   go _ _ = pure id
 
-atomicTypes :: Traversal' (Type Checking) (Type Checking)
-atomicTypes f (Bound (Function arity a b)) = Bound <$> (Function arity <$> f a <*> f b)
-atomicTypes f ty = f ty
+typeVariables :: Traversal' (Type Checking) (Type Checking)
+typeVariables f ty@Free{} = f ty
+typeVariables f ty@(Bound Polymorphic{}) = f ty
+typeVariables f (Bound (Function arity a b)) = Bound <$> (Function arity <$> typeVariables f a <*> typeVariables f b)
+typeVariables _ ty = pure ty
 
 replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking
-replace from to a = if a == from then to else a
+replace from to = typeVariables %~ \a -> if a == from then to & bound %~ boxed else a
