@@ -20,11 +20,5 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
   go a b | a /= b = throwError $ TypeMismatch ty1 ty2
   go _ _ = pure id
 
-typeVariables :: Traversal' (Type Checking) (Type Checking)
-typeVariables f ty@Free{} = f ty
-typeVariables f ty@(Bound Polymorphic{}) = f ty
-typeVariables f (Bound (Function arity a b)) = Bound <$> (Function arity <$> typeVariables f a <*> typeVariables f b)
-typeVariables _ ty = pure ty
-
 replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking
-replace from to = typeVariables %~ \a -> if a == from then to & bound %~ boxed else a
+replace from to = typeVariables %~ \a -> if a == from then to & _Bound %~ boxed else a

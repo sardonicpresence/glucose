@@ -14,7 +14,7 @@ import Data.Traversable
 
 import Glucose.Desugar
 import Glucose.Identifier
-import Glucose.IR
+import Glucose.IR hiding (checked)
 import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
 import Glucose.TypeChecker.TypeCheckError

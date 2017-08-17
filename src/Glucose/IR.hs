@@ -4,8 +4,8 @@ module Glucose.IR
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  bound, free, bind, checkingType, uncheckedType, boxed,
-  Typed(..), types, replaceType, remap, freeTypes, bindTypes
+  _Bound, free, bind, checked, remap, bindings, atomic, typeVariables, checkingType, uncheckedType, boxed,
+  Typed(..), types, replaceType, freeTypes, bindTypes
 )
 where
 
@@ -106,8 +106,8 @@ instance Show Arity where
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
-bound :: Prism' (Type Checking) (DataType (Type Checking))
-bound = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
+_Bound :: Prism' (Type Checking) (DataType (Type Checking))
+_Bound = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
 
 {- | Traversal mapping checked type variables to free type variables. -}
 free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
@@ -121,11 +121,27 @@ bind f (Free name) = Checked . Polymorphic <$> f name
 bind f (Bound (Function arity a b)) = Checked <$> (Function arity <$> bind f a <*> bind f b)
 bind f (Bound ty) = Checked <$> traverse (bind f) ty
 
+checked :: Traversal (Type Checking) (Type Checked) Identifier Identifier
+checked f (Bound (Polymorphic name)) = Checked . Polymorphic <$> f name
+checked f (Bound (Function arity a b)) = Checked <$> (Function arity <$> checked f a <*> checked f b)
+checked f (Bound ty) = Checked <$> traverse (checked f) ty
+checked _ (Free name) = pure . Checked $ Polymorphic name
+
 remap :: Applicative m => Traversal from to Identifier Identifier -> m Identifier -> from -> m to
 remap remapping newName from = do
   let names = nub $ from ^.. getting remapping
   subs <- for names $ \name -> (name, ) <$> newName
   pure $ from & remapping %~ \a -> fromMaybe a $ lookup a subs
+
+atomic :: Traversal' (Type Checking) (Type Checking)
+atomic f (Bound (Function arity a b)) = Bound <$> (Function arity <$> atomic f a <*> atomic f b)
+atomic f ty = f ty
+
+typeVariables :: Traversal' (Type Checking) (Type Checking)
+typeVariables f ty@Free{} = f ty
+typeVariables f ty@(Bound Polymorphic{}) = f ty
+typeVariables f (Bound (Function arity a b)) = Bound <$> (Function arity <$> typeVariables f a <*> typeVariables f b)
+typeVariables _ ty = pure ty
 
 checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
 checkingType newName Untyped = Free <$> newName
@@ -166,7 +182,7 @@ instance Show Literal where
 instance Show t => Show (DataType t) where
   show (Unboxed ty) = show ty
   show (Boxed ty) = "{" ++ show ty ++ "}"
-  show (ADT name) = show name
+  show (ADT name) = show name ++ "#"
   -- show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
   show (Function ar arg ret) = "(" ++ show arg ++ show ar ++ show ret ++ ")"
   show (Polymorphic name) = show name
