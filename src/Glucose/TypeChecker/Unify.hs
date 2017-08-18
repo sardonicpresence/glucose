@@ -21,4 +21,4 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
   go _ _ = pure id
 
 replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking
-replace from to = typeVariables %~ \a -> if a == from then to & _Bound %~ boxed else a
+replace from to = typeVariables %~ \a -> if a == from then to & dataType %~ boxed else a

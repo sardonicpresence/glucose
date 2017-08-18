@@ -4,8 +4,8 @@ module Glucose.IR
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  _Bound, free, bind, checked, remap, bindings, atomic, typeVariables, checkingType, uncheckedType, boxed,
-  Typed(..), types, replaceType, freeTypes, bindTypes
+  free, bind, checked, types, remap, bindings, typeVariables, checkingType, uncheckedType, boxed,
+  Typed(..), typeAnnotations, replaceType, freeTypes, bindTypes
 )
 where
 
@@ -43,7 +43,7 @@ class ReferenceAnnotation (Ref ann) => Annotations ann where
   data Type ann :: *
   type Ref ann :: *
   withType :: String -> Type ann -> String
-  dataType :: DataType (Type ann) -> Type ann
+  dataType :: Prism' (Type ann) (DataType (Type ann))
 
 data Unchecked
 data Checking
@@ -79,19 +79,19 @@ instance Annotations Unchecked where
   data Type Unchecked = Untyped deriving (Eq)
   type Ref Unchecked = ()
   withType = const
-  dataType = const Untyped
+  dataType = prism (const Untyped) Left
 
 instance Annotations Checking where
   data Type Checking = Free Identifier | Bound (DataType (Type Checking)) deriving (Eq)
   type Ref Checking = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
-  dataType = Bound
+  dataType = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
 
 instance Annotations Checked where
   newtype Type Checked = Checked (DataType (Type Checked)) deriving (Eq, Ord)
   type Ref Checked = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
-  dataType = Checked
+  dataType = prism' Checked $ \case Checked ty -> Just ty
 
 instance Show (Type Checking) where
   show (Free name) = "*" ++ show name
@@ -105,9 +105,6 @@ instance Show Arity where
   -- show UnknownArity = "-?>"
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
-
-_Bound :: Prism' (Type Checking) (DataType (Type Checking))
-_Bound = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
 
 {- | Traversal mapping checked type variables to free type variables. -}
 free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
@@ -133,9 +130,10 @@ remap remapping newName from = do
   subs <- for names $ \name -> (name, ) <$> newName
   pure $ from & remapping %~ \a -> fromMaybe a $ lookup a subs
 
-atomic :: Traversal' (Type Checking) (Type Checking)
-atomic f (Bound (Function arity a b)) = Bound <$> (Function arity <$> atomic f a <*> atomic f b)
-atomic f ty = f ty
+types :: Annotations ann => Traversal' (Type ann) (Type ann)
+types = dataType . \f -> \case
+  Function arity a b -> Function arity <$> f a <*> f b
+  ty -> pure ty
 
 typeVariables :: Traversal' (Type Checking) (Type Checking)
 typeVariables f ty@Free{} = f ty
@@ -199,35 +197,36 @@ class Typed ann a | a -> ann where
 
 instance (Comonad f, Annotations ann) => Typed ann (Definition ann f) where
   typeOf (Definition _ e) = typeOf $ extract e
-  typeOf (Constructor _ typeName _) = dataType . ADT $ extract typeName
+  typeOf (Constructor _ typeName _) = dataType # ADT (extract typeName)
 
 instance (Comonad f, Annotations ann) => Typed ann (Expression ann f) where
-  typeOf (Literal (IntegerLiteral _)) = dataType $ Unboxed Integer
-  typeOf (Literal (FloatLiteral _)) = dataType $ Unboxed Float
+  typeOf (Literal (IntegerLiteral _)) = dataType # Unboxed Integer
+  typeOf (Literal (FloatLiteral _)) = dataType # Unboxed Float
   typeOf (Reference _ _ _ ty) = ty
   typeOf (Lambda args expr) = go (length args) args where
     go _ [] = typeOf $ extract expr
-    go m (a:as) = dataType $ Function (Arity m) (typeOf $ extract a) (go (m-1) as)
+    go m (a:as) = dataType # Function (Arity m) (typeOf $ extract a) (go (m-1) as)
   typeOf (Apply _ _ ty) = ty
 
 instance Typed ann (Arg ann) where
   typeOf (Arg _ ty) = ty
 
-types :: (Traversable f, Ref from ~ Ref to) => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
-types _ (Literal lit) = pure $ Literal lit
-types f (Reference kind name rep ty) = Reference kind name <$> f rep <*> f ty
-types f (Lambda args expr) = Lambda <$> traverse (traverse $ argType f) args <*> traverse (types f) expr where
-  argType f (Arg name ty) = Arg name <$> f ty
-types f (Apply fun arg ty) = Apply <$> traverse (types f) fun <*> traverse (types f) arg <*> f ty
+typeAnnotations :: (Traversable f, Ref from ~ Ref to) => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
+typeAnnotations f = \case
+  Literal lit -> pure $ Literal lit
+  Reference kind name rep ty -> Reference kind name <$> f rep <*> f ty
+  Lambda args expr -> Lambda <$> traverse (traverse $ argType f) args <*> traverse (typeAnnotations f) expr where
+    argType f (Arg name ty) = Arg name <$> f ty
+  Apply fun arg ty -> Apply <$> traverse (typeAnnotations f) fun <*> traverse (typeAnnotations f) arg <*> f ty
 
 replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
-replaceType from to = types . filtered (== from) .~ to
+replaceType from to = typeAnnotations . filtered (== from) .~ to
 
 freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
-freeTypes = remap $ types . free
+freeTypes = remap $ typeAnnotations . free
 
 bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
-bindTypes = remap $ types . bind
+bindTypes = remap $ typeAnnotations . bind
 
 
 -- * Bound instances

@@ -4,6 +4,7 @@ import Test.Prelude
 
 import Control.Comonad.Identity
 import Control.Lens
+import Control.Lens.Utils
 import Data.List
 import Glucose.IR
 import Glucose.Test.IR
@@ -57,7 +58,7 @@ spec = describe "unify" $ do
   it "results in two identical types, ignoring boxing, or fails to unify" $ property $ \a b -> disjoint a b ==>
     case unify (Identity a) (Identity b) of
       Left _ -> property True
-      Right f -> (f a & atomic %~ box) === (f b & atomic %~ box)
+      Right f -> (f a & recursing types %~ box) === (f b & recursing types %~ box)
 
 unifyTo :: (Type Checking, Type Checking) -> (Type Checking, Type Checking) -> Property
 unifyTo (a, b) (a', b') = (unify (Identity a) (Identity b) >>= \f -> pure (f a, f b)) === Right (a', b')
@@ -76,7 +77,7 @@ disjoint a b =
   null ((a ^.. getting checked) `intersect` (b ^.. getting checked))
 
 box :: Type Checking -> Type Checking
-box = _Bound %~ boxed
+box = dataType %~ boxed
 
 function :: Type Checking -> Type Checking -> Type Checking
 function f a = Bound $ Function UnknownArity f a

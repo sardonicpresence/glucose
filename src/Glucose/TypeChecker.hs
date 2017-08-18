@@ -73,10 +73,10 @@ typeCheckExpression expr = for expr $ \case
     arg' <- typeCheckExpression arg
     ty' <- checkingType newVar ty
     unifier <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
-    pure $ Apply (expr' <&> types %~ unifier) (arg' <&> types %~ unifier) (unifier ty')
+    pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
 
 functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
-functionReturning returnType argType = dataType $ Function UnknownArity argType returnType
+functionReturning returnType argType = dataType # Function UnknownArity argType returnType
 
 typeCheckIdentifier :: f Identifier -> TypeCheck f m (Expression Checking f)
 typeCheckIdentifier variable = do
