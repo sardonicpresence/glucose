@@ -7,8 +7,10 @@ import Control.Lens.TH ()
 import Control.Lens.Utils
 import Control.Monad.Except
 import Control.Monad.State
+import Data.List as List
 import Data.Map.Strict as Map
 import Data.Map.Utils as Map
+import Data.Maybe
 import Data.Set as Set
 import Data.Traversable
 
@@ -126,3 +128,15 @@ referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def)
 
 referenceArg :: Arg Checking -> Expression Checking f
 referenceArg (Arg name ty) = Reference Local name ty ty
+
+freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
+freeTypes = remap $ typeAnnotations . free
+
+bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
+bindTypes = remap $ typeAnnotations . bind
+
+remap :: Applicative m => Traversal from to Identifier Identifier -> m Identifier -> from -> m to
+remap remapping newName from = do
+  let names = nub $ from ^.. getting remapping
+  subs <- for names $ \name -> (name, ) <$> newName
+  pure $ from & remapping %~ \a -> fromMaybe a $ List.lookup a subs

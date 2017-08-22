@@ -2,6 +2,7 @@ module Glucose.TypeChecker.Unify (unify) where
 
 import Control.Comonad
 import Control.Lens
+import Control.Lens.Utils
 import Control.Monad.Except
 import Glucose.IR
 import Glucose.TypeChecker.TypeCheckError
@@ -21,4 +22,4 @@ unify ty1 ty2 = go (extract ty1) (extract ty2) where
   go _ _ = pure id
 
 replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking
-replace from to = typeVariables %~ \a -> if a == from then to & dataType %~ boxed else a
+replace from to = recursing types %~ \a -> if a == from then to & dataType %~ boxed else a

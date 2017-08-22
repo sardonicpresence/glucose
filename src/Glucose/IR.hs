@@ -4,8 +4,8 @@ module Glucose.IR
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  free, bind, checked, types, remap, bindings, typeVariables, checkingType, uncheckedType, boxed,
-  Typed(..), typeAnnotations, replaceType, freeTypes, bindTypes
+  free, bind, checked, types, bindings, checkingType, uncheckedType, boxed,
+  Typed(..), typeAnnotations, replaceType
 )
 where
 
@@ -15,6 +15,7 @@ import Data.List
 import Data.Maybe
 import Data.Traversable (for)
 import Glucose.Identifier
+import Unsafe.Coerce
 
 newtype Module ann f = Module [f (Definition ann f)]
 deriving instance (Eq (f (Definition ann f))) => Eq (Module ann f)
@@ -106,11 +107,36 @@ instance Show Arity where
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
+foo :: Traversal (Type Checked) (Type Checking) Identifier (Either Identifier Identifier)
+foo f (Checked (Polymorphic name)) = either Free (Bound . Polymorphic) <$> f name
+foo f (Checked (Function arity a b)) = Bound <$> (Function arity <$> foo f a <*> foo f b)
+foo f (Checked ty) = Bound <$> traverse (foo f) ty
+
+baz :: Prism s t a b -> Traversal a t a b
+baz p f a = withPrism p $ \to _ -> to <$> f a
+-- baz p f a = review (getting p) <$> f a
+
+-- bar :: Functor f => (t -> f a) -> t -> f (Either a b)
+bar :: Traversal t (Either a b) t a
+bar = ((Left <$>) .)
+
+-- faz :: (a -> b) -> Traversal a b a a
+faz :: (Functor f1, Functor f) => (f (f1 b) -> c) -> (a -> b) -> f (f1 a) -> c
+faz a b = a . (fmap . fmap) b
+
 {- | Traversal mapping checked type variables to free type variables. -}
 free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
-free f (Checked (Polymorphic name)) = Free <$> f name
-free f (Checked (Function arity a b)) = Bound <$> (Function arity <$> free f a <*> free f b)
-free f (Checked ty) = Bound <$> traverse (free f) ty
+free = foo . (fmap . fmap) Left
+-- free f (Checked (Polymorphic name)) = Free <$> f name
+-- free f (Checked (Function arity a b)) = Bound <$> (Function arity <$> free f a <*> free f b)
+-- free f (Checked ty) = Bound <$> traverse (free f) ty
+
+{- | Traversal mapping checked type variables to checking type variables. -}
+uncheck :: Traversal (Type Checked) (Type Checking) Identifier Identifier
+uncheck = foo . (fmap . fmap) Right
+-- uncheck f (Checked (Polymorphic name)) = Bound . Polymorphic <$> f name
+-- uncheck f (Checked (Function arity a b)) = Bound <$> (Function arity <$> free f a <*> free f b)
+-- uncheck f (Checked ty) = Bound <$> traverse (free f) ty
 
 {- | Traversal mapping free type variables to checked type variables. -}
 bind :: Traversal (Type Checking) (Type Checked) Identifier Identifier
@@ -124,22 +150,13 @@ checked f (Bound (Function arity a b)) = Checked <$> (Function arity <$> checked
 checked f (Bound ty) = Checked <$> traverse (checked f) ty
 checked _ (Free name) = pure . Checked $ Polymorphic name
 
-remap :: Applicative m => Traversal from to Identifier Identifier -> m Identifier -> from -> m to
-remap remapping newName from = do
-  let names = nub $ from ^.. getting remapping
-  subs <- for names $ \name -> (name, ) <$> newName
-  pure $ from & remapping %~ \a -> fromMaybe a $ lookup a subs
-
 types :: Annotations ann => Traversal' (Type ann) (Type ann)
-types = dataType . \f -> \case
-  Function arity a b -> Function arity <$> f a <*> f b
-  ty -> pure ty
+types = dataType . dataTypes
 
-typeVariables :: Traversal' (Type Checking) (Type Checking)
-typeVariables f ty@Free{} = f ty
-typeVariables f ty@(Bound Polymorphic{}) = f ty
-typeVariables f (Bound (Function arity a b)) = Bound <$> (Function arity <$> typeVariables f a <*> typeVariables f b)
-typeVariables _ ty = pure ty
+dataTypes :: Traversal (DataType (Type from)) (DataType (Type to)) (Type from) (Type to)
+dataTypes f = \case
+  Function arity a b -> Function arity <$> f a <*> f b
+  ty -> pure $ unsafeCoerce ty
 
 checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
 checkingType newName Untyped = Free <$> newName
@@ -211,6 +228,7 @@ instance (Comonad f, Annotations ann) => Typed ann (Expression ann f) where
 instance Typed ann (Arg ann) where
   typeOf (Arg _ ty) = ty
 
+{- | Traversal over all type annotations in an expression. -}
 typeAnnotations :: (Traversable f, Ref from ~ Ref to) => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
 typeAnnotations f = \case
   Literal lit -> pure $ Literal lit
@@ -219,14 +237,9 @@ typeAnnotations f = \case
     argType f (Arg name ty) = Arg name <$> f ty
   Apply fun arg ty -> Apply <$> traverse (typeAnnotations f) fun <*> traverse (typeAnnotations f) arg <*> f ty
 
+{- | Replace one type with another in an expression. -}
 replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
 replaceType from to = typeAnnotations . filtered (== from) .~ to
-
-freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
-freeTypes = remap $ typeAnnotations . free
-
-bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
-bindTypes = remap $ typeAnnotations . bind
 
 
 -- * Bound instances
