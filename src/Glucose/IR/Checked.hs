@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms #-}
 module Glucose.IR.Checked
 (
   module Glucose.IR,
@@ -9,7 +10,7 @@ import Control.Comonad.Utils
 import Control.Lens
 import Data.Monoid
 import qualified Data.Set as Set
-import Glucose.IR hiding (Module(), Definition(), Expression(), Arg(), Type())
+import Glucose.IR hiding (Module(), Definition(), Expression(), Arg(), Type(), Checked)
 import qualified Glucose.IR as IR
 
 type Module = IR.Module IR.Checked
@@ -17,6 +18,9 @@ type Definition = IR.Definition IR.Checked
 type Expression = IR.Expression IR.Checked
 type Arg = IR.Arg IR.Checked
 type Type = IR.Type IR.Checked
+
+pattern Checked :: DataType Type -> Type
+pattern Checked ty = Type (IR.Checked ty)
 
 -- * Apply
 

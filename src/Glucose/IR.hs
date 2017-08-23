@@ -2,9 +2,9 @@
 module Glucose.IR
 (
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
-  Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..),
+  Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  free, bind, checked, types, bindings, checkingType, uncheckedType, boxed,
+  dataType, typeVariables, free, uncheck, bind, types, bindings, boxed,
   Typed(..), typeAnnotations, replaceType
 )
 where
@@ -12,8 +12,6 @@ where
 import Control.Comonad
 import Control.Lens
 import Data.List
-import Data.Maybe
-import Data.Traversable (for)
 import Glucose.Identifier
 import Unsafe.Coerce
 
@@ -40,11 +38,25 @@ deriving instance Ord (Type ann) => Ord (Arg ann)
 
 -- * Annotations
 
-class ReferenceAnnotation (Ref ann) => Annotations ann where
-  data Type ann :: *
+class (Traversable (TypeF ann), ReferenceAnnotation (Ref ann)) => Annotations ann where
+  data TypeF ann :: * -> *
   type Ref ann :: *
   withType :: String -> Type ann -> String
-  dataType :: Prism' (Type ann) (DataType (Type ann))
+  typeF :: Prism' (TypeF ann a) a
+
+newtype Type ann = Type (TypeF ann (DataType (Type ann)))
+
+deriving instance Eq (TypeF ann (DataType (Type ann))) => Eq (Type ann)
+deriving instance Ord (TypeF ann (DataType (Type ann))) => Ord (Type ann)
+
+instance Show (TypeF ann (DataType (Type ann))) => Show (Type ann) where
+  show (Type ty) = show ty
+
+_Type :: Iso (Type from) (Type to) (TypeF from (DataType (Type from))) (TypeF to (DataType (Type to)))
+_Type = flip iso Type $ \(Type ty) -> ty
+
+dataType :: Annotations ann => Prism' (Type ann) (DataType (Type ann))
+dataType = _Type . typeF
 
 data Unchecked
 data Checking
@@ -71,34 +83,38 @@ instance ReferenceAnnotation ReferenceKind where
 data Primitive = Integer | Float
   deriving (Eq, Ord)
 
-data Arity = UnknownArity | Arity Int deriving (Eq, Ord)
+data Arity = UnknownArity | Arity Int
+  deriving (Eq, Ord)
 
 data DataType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t | Polymorphic Identifier
   deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 instance Annotations Unchecked where
-  data Type Unchecked = Untyped deriving (Eq)
+  data TypeF Unchecked ty = Untyped
+    deriving (Eq, Functor, Foldable, Traversable)
   type Ref Unchecked = ()
   withType = const
-  dataType = prism (const Untyped) Left
+  typeF = prism (const Untyped) Left
 
 instance Annotations Checking where
-  data Type Checking = Free Identifier | Bound (DataType (Type Checking)) deriving (Eq)
+  data TypeF Checking ty = Free Identifier | Bound ty
+    deriving (Eq, Functor, Foldable, Traversable)
   type Ref Checking = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
-  dataType = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
+  typeF = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
 
 instance Annotations Checked where
-  newtype Type Checked = Checked (DataType (Type Checked)) deriving (Eq, Ord)
+  newtype TypeF Checked ty = Checked ty
+    deriving (Eq, Ord, Functor, Foldable, Traversable)
   type Ref Checked = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
-  dataType = prism' Checked $ \case Checked ty -> Just ty
+  typeF = prism' Checked $ \(Checked ty) -> Just ty
 
-instance Show (Type Checking) where
+instance Show ty => Show (TypeF Checking ty) where
   show (Free name) = "*" ++ show name
   show (Bound ty) = show ty
 
-instance Show (Type Checked) where
+instance Show ty => Show (TypeF Checked ty) where
   show (Checked ty) = show ty
 
 instance Show Arity where
@@ -107,48 +123,24 @@ instance Show Arity where
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
 
-foo :: Traversal (Type Checked) (Type Checking) Identifier (Either Identifier Identifier)
-foo f (Checked (Polymorphic name)) = either Free (Bound . Polymorphic) <$> f name
-foo f (Checked (Function arity a b)) = Bound <$> (Function arity <$> foo f a <*> foo f b)
-foo f (Checked ty) = Bound <$> traverse (foo f) ty
-
-baz :: Prism s t a b -> Traversal a t a b
-baz p f a = withPrism p $ \to _ -> to <$> f a
--- baz p f a = review (getting p) <$> f a
-
--- bar :: Functor f => (t -> f a) -> t -> f (Either a b)
-bar :: Traversal t (Either a b) t a
-bar = ((Left <$>) .)
-
--- faz :: (a -> b) -> Traversal a b a a
-faz :: (Functor f1, Functor f) => (f (f1 b) -> c) -> (a -> b) -> f (f1 a) -> c
-faz a b = a . (fmap . fmap) b
+typeVariables :: (Annotations from, Annotations to)
+ => Traversal (Type from) (Type to) (TypeF from Identifier) (TypeF to Identifier)
+typeVariables f = _Type $ either (review typeF <$>) ((fmap.fmap) Polymorphic . f) . traverse typeVariable where
+  typeVariable (Polymorphic name) = Right name
+  typeVariable (Function arity a b) = Left $ Function arity <$> typeVariables f a <*> typeVariables f b
+  typeVariable ty = Left . pure $ unsafeCoerce ty
 
 {- | Traversal mapping checked type variables to free type variables. -}
 free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
-free = foo . (fmap . fmap) Left
--- free f (Checked (Polymorphic name)) = Free <$> f name
--- free f (Checked (Function arity a b)) = Bound <$> (Function arity <$> free f a <*> free f b)
--- free f (Checked ty) = Bound <$> traverse (free f) ty
+free f = typeVariables $ \(Checked name) -> Free <$> f name
 
 {- | Traversal mapping checked type variables to checking type variables. -}
 uncheck :: Traversal (Type Checked) (Type Checking) Identifier Identifier
-uncheck = foo . (fmap . fmap) Right
--- uncheck f (Checked (Polymorphic name)) = Bound . Polymorphic <$> f name
--- uncheck f (Checked (Function arity a b)) = Bound <$> (Function arity <$> free f a <*> free f b)
--- uncheck f (Checked ty) = Bound <$> traverse (free f) ty
+uncheck f = typeVariables $ \(Checked name) -> Bound <$> f name
 
 {- | Traversal mapping free type variables to checked type variables. -}
 bind :: Traversal (Type Checking) (Type Checked) Identifier Identifier
-bind f (Free name) = Checked . Polymorphic <$> f name
-bind f (Bound (Function arity a b)) = Checked <$> (Function arity <$> bind f a <*> bind f b)
-bind f (Bound ty) = Checked <$> traverse (bind f) ty
-
-checked :: Traversal (Type Checking) (Type Checked) Identifier Identifier
-checked f (Bound (Polymorphic name)) = Checked . Polymorphic <$> f name
-checked f (Bound (Function arity a b)) = Checked <$> (Function arity <$> checked f a <*> checked f b)
-checked f (Bound ty) = Checked <$> traverse (checked f) ty
-checked _ (Free name) = pure . Checked $ Polymorphic name
+bind f = typeVariables $ fmap Checked . f . \case Free name -> name; Bound name -> name
 
 types :: Annotations ann => Traversal' (Type ann) (Type ann)
 types = dataType . dataTypes
@@ -157,12 +149,6 @@ dataTypes :: Traversal (DataType (Type from)) (DataType (Type to)) (Type from) (
 dataTypes f = \case
   Function arity a b -> Function arity <$> f a <*> f b
   ty -> pure $ unsafeCoerce ty
-
-checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
-checkingType newName Untyped = Free <$> newName
-
-uncheckedType :: Type Checked -> Type Checking
-uncheckedType (Checked ty) = Bound $ uncheckedType <$> ty
 
 boxed :: DataType ty -> DataType ty
 boxed (Unboxed ty) = Boxed ty
@@ -194,12 +180,13 @@ instance Show Literal where
   show (IntegerLiteral a) = show a
   show (FloatLiteral a) = show a
 
-instance Show t => Show (DataType t) where
+instance (Show (Type ann), Annotations ann) => Show (DataType (Type ann)) where
   show (Unboxed ty) = show ty
   show (Boxed ty) = "{" ++ show ty ++ "}"
   show (ADT name) = show name ++ "#"
-  -- show (Function ar arg@Function{} ret) = "(" ++ show arg ++ ")" ++ show ar ++ show ret
-  show (Function ar arg ret) = "(" ++ show arg ++ show ar ++ show ret ++ ")"
+  show (Function ar arg ret) = case arg ^? dataType of
+    Just Function{} -> "(" ++ show arg ++ ")" ++ show ar ++ show ret
+    _ -> show arg ++ show ar ++ show ret
   show (Polymorphic name) = show name
 
 instance Show Primitive where
@@ -229,7 +216,8 @@ instance Typed ann (Arg ann) where
   typeOf (Arg _ ty) = ty
 
 {- | Traversal over all type annotations in an expression. -}
-typeAnnotations :: (Traversable f, Ref from ~ Ref to) => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
+typeAnnotations :: (Traversable f, Ref from ~ Ref to)
+ => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
 typeAnnotations f = \case
   Literal lit -> pure $ Literal lit
   Reference kind name rep ty -> Reference kind name <$> f rep <*> f ty
@@ -253,7 +241,3 @@ instance Comonad f => Bound f (f (Definition ann f)) where
 
 instance Functor f => Bound f (f (Arg ann)) where
   identifier = fmap $ \case Arg name _ -> name
-
--- argTypes :: Type Checked -> [Type Checked]
--- argTypes (Function _ a b) = a : argTypes b
--- argTypes _ = []

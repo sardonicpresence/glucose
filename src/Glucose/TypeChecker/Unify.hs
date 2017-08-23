@@ -1,11 +1,20 @@
+{-# LANGUAGE PatternSynonyms #-}
 module Glucose.TypeChecker.Unify (unify) where
 
 import Control.Comonad
 import Control.Lens
 import Control.Lens.Utils
 import Control.Monad.Except
-import Glucose.IR
+import Glucose.Identifier
+import Glucose.IR hiding (Free, Bound)
+import qualified Glucose.IR as IR
 import Glucose.TypeChecker.TypeCheckError
+
+pattern Free :: Identifier -> Type Checking
+pattern Free name = Type (IR.Free name)
+
+pattern Bound :: DataType (Type Checking) -> Type Checking
+pattern Bound name = Type (IR.Bound name)
 
 unify :: (MonadError (TypeCheckError f) m, Comonad f)
  => f (Type Checking) -> f (Type Checking) -> m (Type Checking -> Type Checking)

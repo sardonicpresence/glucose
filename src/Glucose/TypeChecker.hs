@@ -16,7 +16,7 @@ import Data.Traversable
 
 import Glucose.Desugar
 import Glucose.Identifier
-import Glucose.IR hiding (checked)
+import Glucose.IR
 import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
 import Glucose.TypeChecker.TypeCheckError
@@ -86,7 +86,7 @@ typeCheckIdentifier variable = do
   maybe (throwError $ UnrecognisedVariable variable) (referenceTo . extract <=< typeCheckDefinition) referenced
 
 typeCheckArg :: Arg Unchecked -> TypeCheck f m (Arg Checking)
-typeCheckArg (Arg name _) = Arg name . Bound . Polymorphic <$> newVar
+typeCheckArg (Arg name _) = Arg name . Type . Bound . Polymorphic <$> newVar
 
 startChecking :: Identifier -> TypeCheck f m ()
 startChecking name = checking %= Set.insert name
@@ -140,3 +140,6 @@ remap remapping newName from = do
   let names = nub $ from ^.. getting remapping
   subs <- for names $ \name -> (name, ) <$> newName
   pure $ from & remapping %~ \a -> fromMaybe a $ List.lookup a subs
+
+checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
+checkingType = typeVariables . const . (Free <$>)

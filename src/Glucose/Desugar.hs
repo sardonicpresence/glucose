@@ -21,15 +21,15 @@ constructor typeName n ctor = pure $ ctor $> IR.Constructor ctor typeName n
 
 expression :: (Comonad f, Applicative m, Traversable m) => AST.Expression f -> m (IR.Expression Unchecked f)
 expression (AST.Value a) = value a
-expression (AST.Apply f a) = IR.Apply <$> mapC expression f <*> mapC value a <*> pure Untyped
+expression (AST.Apply f a) = IR.Apply <$> mapC expression f <*> mapC value a <*> pure (Type Untyped)
 
 value :: (Applicative m, Traversable m) => Comonad f => AST.Value f -> m (IR.Expression Unchecked f)
 value (AST.Literal lit) = IR.Literal <$> literal lit
-value (AST.Variable name) = pure $ IR.Reference () name Untyped Untyped
+value (AST.Variable name) = pure $ IR.Reference () name (Type Untyped) (Type Untyped)
 value (AST.Lambda args expr) = IR.Lambda <$> traverse (mapC arg) args <*> mapC expression expr
 
 arg :: Applicative m => Identifier -> m (IR.Arg Unchecked)
-arg a = pure $ IR.Arg a Untyped
+arg a = pure $ IR.Arg a (Type Untyped)
 
 literal :: Applicative m => AST.Literal -> m IR.Literal
 literal (AST.IntegerLiteral value) = pure $ IR.IntegerLiteral value

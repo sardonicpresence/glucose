@@ -6,7 +6,7 @@ import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
 instance Arbitrary (Type Checking) where
-  arbitrary = frequency [ (1, Free <$> arbitrary), (5, Bound <$> arbitrary) ]
+  arbitrary = Type <$> frequency [ (1, Free <$> arbitrary), (5, Bound <$> arbitrary) ]
 
 instance Arbitrary ty => Arbitrary (DataType ty) where
   arbitrary = oneof
@@ -26,7 +26,7 @@ instance Show Monomorphic where
   show (Monomorphic ty) = show ty
 
 instance Arbitrary Monomorphic where
-  arbitrary = Monomorphic . Bound <$> oneof
+  arbitrary = Monomorphic . Type . Bound <$> oneof
     [ Unboxed <$> arbitrary
     , Boxed <$> arbitrary
     , ADT <$> arbitrary
@@ -34,10 +34,10 @@ instance Arbitrary Monomorphic where
     ]
 
 isBound :: Type Checking -> Bool
-isBound Bound{} = True
+isBound (Type Bound{}) = True
 isBound _ = False
 
 hasStructure :: Type Checking -> Bool
-hasStructure Free{} = False
-hasStructure (Bound Polymorphic{}) = False
+hasStructure (Type Free{}) = False
+hasStructure (Type (Bound Polymorphic{})) = False
 hasStructure _ = True
