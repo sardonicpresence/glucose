@@ -1,16 +1,10 @@
-{-# LANGUAGE PatternSynonyms #-}
-module Glucose.IR.Checked
-(
-  module Glucose.IR,
-  module Glucose.IR.Checked
-)
-where
+module Glucose.IR.Checked ( module Glucose.IR, module Glucose.IR.Checked ) where
 
 import Control.Comonad.Utils
 import Control.Lens
 import Data.Monoid
 import qualified Data.Set as Set
-import Glucose.IR hiding (Module(), Definition(), Expression(), Arg(), Type(), Checked)
+import Glucose.IR hiding (Module(), Definition(), Expression(), Arg(), Type())
 import qualified Glucose.IR as IR
 
 type Module = IR.Module IR.Checked
@@ -18,9 +12,6 @@ type Definition = IR.Definition IR.Checked
 type Expression = IR.Expression IR.Checked
 type Arg = IR.Arg IR.Checked
 type Type = IR.Type IR.Checked
-
-pattern Checked :: DataType Type -> Type
-pattern Checked ty = Type (IR.Checked ty)
 
 -- * Apply
 
@@ -36,8 +27,8 @@ flattenApply f a = go f [a] where
     Lambda _ _ -> undefined
     Literal _ -> error "Cannot supply arguments to a literal!" -- TODO: improve & move
   -- apply :: Type -> [Expression f] -> [Expression f] -> ([[Expression f]], Maybe (Partial f))
-  apply (Checked (Function (Arity 1) _ b)) applied (a:as) = apply b [] as & _1 %~ (reverse (a:applied) :)
-  apply (Checked (Function (Arity _) _ b)) applied (a:as) = apply b (a:applied) as
+  apply (CheckedType (Function (Arity 1) _ b)) applied (a:as) = apply b [] as & _1 %~ (reverse (a:applied) :)
+  apply (CheckedType (Function (Arity _) _ b)) applied (a:as) = apply b (a:applied) as
   apply _ [] [] = ([], Nothing)
   apply b applied [] = ([], Just . Partial b $ reverse applied)
   apply b _ _ = error $ "Cannot supply arguments to non-function " ++ show b -- TODO: improve & move

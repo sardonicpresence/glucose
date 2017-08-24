@@ -1,29 +1,20 @@
-{-# LANGUAGE PatternSynonyms #-}
 module Glucose.TypeChecker.Unify (unify) where
 
 import Control.Comonad
 import Control.Lens
 import Control.Lens.Utils
 import Control.Monad.Except
-import Glucose.Identifier
-import Glucose.IR hiding (Free, Bound)
-import qualified Glucose.IR as IR
+import Glucose.IR
 import Glucose.TypeChecker.TypeCheckError
-
-pattern Free :: Identifier -> Type Checking
-pattern Free name = Type (IR.Free name)
-
-pattern Bound :: DataType (Type Checking) -> Type Checking
-pattern Bound name = Type (IR.Bound name)
 
 unify :: (MonadError (TypeCheckError f) m, Comonad f)
  => f (Type Checking) -> f (Type Checking) -> m (Type Checking -> Type Checking)
 unify ty1 ty2 = go (extract ty1) (extract ty2) where
-  go a b@Free{} = pure $ replace b a
-  go a@Free{} b = pure $ replace a b
-  go a b@(Bound Polymorphic{}) = pure $ replace b a
-  go a@(Bound Polymorphic{}) b = pure $ replace a b
-  go (Bound (Function _ a b)) (Bound (Function _ c d)) = do
+  go a b@FreeType{} = pure $ replace b a
+  go a@FreeType{} b = pure $ replace a b
+  go a b@(BoundType Polymorphic{}) = pure $ replace b a
+  go a@(BoundType Polymorphic{}) b = pure $ replace a b
+  go (BoundType (Function _ a b)) (BoundType (Function _ c d)) = do
     f <- unify (a <$ ty1) (c <$ ty2)
     g <- unify (f b <$ ty1) (f d <$ ty2)
     pure $ g . f

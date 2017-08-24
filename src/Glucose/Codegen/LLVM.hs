@@ -79,7 +79,7 @@ expression (Reference Local (Identifier (mkName -> name)) rep _) = pure $ LLVM.L
 expression (Reference Global (Identifier (mkName -> name)) rep _) =
   let ref = LLVM.GlobalReference name (llvmType rep)
    in case rep of
-        Checked IR.Function{} -> pure ref
+        CheckedType IR.Function{} -> pure ref
         _ -> load ref
 expression (Lambda args def) = withNewGlobal $ \name -> buildLambda name Private (map extract args) (extract def)
 expression (Apply (extract -> f) (extract -> args) _) = case flattenApply f args of
@@ -182,7 +182,7 @@ bitcastFunctionRef a@(LLVM.GlobalReference _ LLVM.Function{}) = ConstConvert LLV
 bitcastFunctionRef a = a
 
 repType :: IR.Type -> IR.Type -> IR.Type
-repType (Checked Polymorphic{}) ty = ty
+repType (CheckedType Polymorphic{}) ty = ty
 repType rep _ = rep
 
 applicationResult :: IR.Type -> IR.Type -> [IR.Expression f] -> (IR.Type, IR.Type)
@@ -191,7 +191,7 @@ applicationResult = go where
   go rep ty (_:as) = applicationResult (retType $ repType rep ty) (retType ty) as
 
 retType :: IR.Type -> IR.Type
-retType (Checked (IR.Function _ _ b)) = b
+retType (CheckedType (IR.Function _ _ b)) = b
 retType _ = error "Non-function does not have a return type!"
 
 literal :: IR.Literal -> LLVM.Expression
@@ -199,7 +199,7 @@ literal (IR.IntegerLiteral n) = i32 n
 literal (IR.FloatLiteral n) = f64 n
 
 llvmType :: IR.Type -> LLVM.Type
-llvmType (Checked ty) = case ty of
+llvmType (CheckedType ty) = case ty of
   Unboxed Integer -> LLVM.I 32
   Unboxed Float -> LLVM.F64
   Boxed{} -> box

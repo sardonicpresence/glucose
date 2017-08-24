@@ -1,9 +1,10 @@
-{-# LANGUAGE TypeFamilies, FunctionalDependencies #-}
+{-# LANGUAGE TypeFamilies, FunctionalDependencies, PatternSynonyms #-}
 module Glucose.IR
 (
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
+  pattern BoundType, pattern FreeType, pattern CheckedType,
   dataType, typeVariables, free, uncheck, bind, types, bindings, boxed,
   Typed(..), typeAnnotations, replaceType
 )
@@ -122,6 +123,15 @@ instance Show Arity where
   -- show UnknownArity = "-?>"
   -- show (Arity n 0) = "-" ++ show n ++ ">"
   -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
+
+pattern BoundType :: DataType (Type Checking) -> Type Checking
+pattern BoundType ty = Type (Bound ty)
+
+pattern FreeType :: Identifier -> Type Checking
+pattern FreeType name = Type (Free name)
+
+pattern CheckedType :: DataType (Type Checked) -> Type Checked
+pattern CheckedType ty = Type (Checked ty)
 
 typeVariables :: (Annotations from, Annotations to)
  => Traversal (Type from) (Type to) (TypeF from Identifier) (TypeF to Identifier)

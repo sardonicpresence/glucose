@@ -95,7 +95,7 @@ typeDefinition :: Identifier -> Text
 typeDefinition (Identifier typeName) = typeName <> " = function() {}\n"
 
 arity :: Type -> Int
-arity (Checked (Function (Arity n) _ _)) = n
+arity (CheckedType (Function (Arity n) _ _)) = n
 arity _ = 0
 
 -- TODO: need to build lambdas to coerce function arguments to the expected arity
