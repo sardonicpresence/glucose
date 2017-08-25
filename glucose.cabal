@@ -55,6 +55,7 @@ library
                      , Glucose.TypeChecker.Unify
                      , Glucose.VarGen
                      , Glucose.Version
+                     , JavaScript.AST
                      , LLVM.AST
                      , LLVM.DSL
                      , LLVM.Name

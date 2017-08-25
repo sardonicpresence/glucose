@@ -10,7 +10,7 @@ variables = map (pack . reverse) $ iterate nextVar "a"
 identifiers :: [Identifier]
 identifiers = map Identifier variables
 
-data VarGen = VarGen String
+newtype VarGen = VarGen String
 
 mkVarGen :: VarGen
 mkVarGen = VarGen ""

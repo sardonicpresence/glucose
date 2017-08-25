@@ -19,13 +19,13 @@ Bar =
 
 three = \a -> 3
 id = \a -> a
-_const = \ a b -> a
+const = \ a b -> a
 
 ofType : a -> a -> a
-ofType = _const
+ofType = const
 
 test = \a -> _test
-test2 = \a -> _const id a
-test4 = \a b -> _const _const a test2 b
-test5 = \a b -> id \c -> _const a c
-main = \a -> test5 test2 _const test5 test4 foo
+test2 = \a -> const id a
+testא = \a b -> const const a test2 b
+test5 = \a b -> id \c -> const a c
+main = \a -> test5 test2 const test5 testא foo

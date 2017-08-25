@@ -8,7 +8,7 @@ import Data.Text.Lazy (toStrict)
 import Data.Text.Lazy.Builder (toLazyText)
 import Data.Text.Lazy.Builder.Int (hexadecimal)
 
-data Name = Name Text
+newtype Name = Name Text
   deriving (Eq)
 
 instance Show Name where

@@ -8,6 +8,7 @@ import Glucose.IR.Checked as IR
 import Glucose.Codegen.JavaScript hiding (codegenDefinitions)
 import qualified  Glucose.Codegen.JavaScript as JS (codegenDefinitions)
 import Glucose.Test.IR.Checked
+import JavaScript.AST (JavaScript)
 
 spec :: Spec
 spec = describe "JavaScript codegen" $ do
@@ -31,5 +32,5 @@ spec = describe "JavaScript codegen" $ do
     , "B = new test()" ]
   -- TODO: JavaScript name mangling e.g. keywords
 
-codegenDefinitions :: [Identity (Definition Identity)] -> JSRaw
+codegenDefinitions :: [Identity (Definition Identity)] -> JavaScript
 codegenDefinitions = JS.codegenDefinitions . map extract
