@@ -6,7 +6,7 @@ module Glucose.IR
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
   pattern BoundType, pattern FreeType, pattern CheckedType,
   dataType, typeVariables, free, uncheck, bind, types, bindings, boxed,
-  Typed(..), typeAnnotations, replaceType
+  Typed(..), typeAnnotations, replaceType, argType
 )
 where
 
@@ -119,10 +119,9 @@ instance Show ty => Show (TypeF Checked ty) where
   show (Checked ty) = show ty
 
 instance Show Arity where
-  show _ = "->"
-  -- show UnknownArity = "-?>"
-  -- show (Arity n 0) = "-" ++ show n ++ ">"
-  -- show (Arity n m) = "-" ++ show n ++ "/" ++ show m ++ ">"
+  -- show _ = "->"
+  show UnknownArity = "->"
+  show (Arity n) = "-" ++ show n ++ ">"
 
 pattern BoundType :: DataType (Type Checking) -> Type Checking
 pattern BoundType ty = Type (Bound ty)
@@ -179,7 +178,7 @@ instance (Comonad f, Annotations ann) => Show (Definition ann f) where
 
 instance (Comonad f, Annotations ann) => Show (Expression ann f) where
   show (Literal lit) = show lit
-  show (Reference kind name rep ty) = showRef kind name `withType` ty `withType` rep -- TODO: include arity
+  show (Reference kind name _ ty) = showRef kind name `withType` ty
   show (Lambda args value) = "\\" ++ unwords (map (show . extract) args) ++ " -> " ++ show (extract value)
   show (Apply expr arg ty) = "((" ++ show (extract expr) ++ ") (" ++ show (extract arg) ++ "))" `withType` ty
 
@@ -238,6 +237,9 @@ typeAnnotations f = \case
 {- | Replace one type with another in an expression. -}
 replaceType :: (Eq (Type ann), Traversable f) => Type ann -> Type ann -> Expression ann f -> Expression ann f
 replaceType from to = typeAnnotations . filtered (== from) .~ to
+
+argType :: Lens (Arg from) (Arg to) (Type from) (Type to)
+argType = lens (\(Arg _ ty) -> ty) (\(Arg name _) ty -> Arg name ty)
 
 
 -- * Bound instances

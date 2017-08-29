@@ -1,6 +1,6 @@
 module Glucose.Namespace
 (
-  Variable(..), Namespace, emptyNamespace, pushScope, popScope,
+  Variable(..), Namespace, emptyNamespace, pushScope, popScope, declaredArgs,
   declare, declareArg, declareDefinition,
   lookupDefinition, lookupVariable
 )
@@ -8,6 +8,7 @@ where
 
 import Control.Applicative
 import Control.Comonad
+import Control.Lens
 import Control.Monad.Except
 import Data.Map.Strict as Map
 import qualified Glucose.IR as IR
@@ -26,6 +27,9 @@ newtype Scope f = Scope (Map Identifier (Variable f))
 
 newtype Namespace f = Namespace [Scope f]
 
+declaredArgs :: Traversal' (Namespace f) (f Arg)
+declaredArgs f (Namespace scopes) = Namespace <$> traverse (\(Scope s) -> Scope <$> traverse (\case Arg a -> Arg <$> f a; a -> pure a) s) scopes
+
 data ScopeLevel = TopLevel | CurrentScope | ParentScope
 
 emptyNamespace :: Namespace f
@@ -34,8 +38,8 @@ emptyNamespace = Namespace [Scope Map.empty]
 pushScope :: Namespace f -> Namespace f
 pushScope (Namespace scopes) = Namespace $ Scope Map.empty : scopes
 
-popScope :: Namespace f -> Namespace f
-popScope (Namespace scopes) = Namespace $ tail scopes
+popScope :: Namespace f -> ([Variable f], Namespace f)
+popScope (Namespace (Scope scope : scopes)) = (Map.elems scope, Namespace scopes)
 
 declare :: Comonad f => Variable f -> Namespace f -> Either (Variable f) (Namespace f)
 declare var ns = case lookupVariable (identify var) ns of

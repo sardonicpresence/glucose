@@ -4,8 +4,9 @@ import Control.Comonad
 import Control.Lens
 import Control.Lens.TH ()
 import Control.Monad.RWS
+import Control.Monad.State
 import Data.Set as Set (Set, fromList, empty, insert, delete, member)
-import Data.Text (Text, pack, intercalate)
+import Data.Text as Text (Text, pack, intercalate, concat)
 import Glucose.Identifier
 import Glucose.IR.Checked
 import Glucose.VarGen
@@ -95,7 +96,38 @@ expression (Literal a) = pure . pack $ show a
 expression (Reference _ a _ _) = pure $ var a
 expression (Lambda args expr) = do
   expr <- expression (extract expr)
-  pure $ "function" <> argList args <> " {" <> " return " <> expr <> " " <> "}"
+  pure $ "function" <> argList args <> " { return " <> expr <> " }"
+expression (Apply (extract -> expr) (extract -> args) _) = let (f, as) = flatten expr args in
+  foldl (<>) <$> expression f <*> (map parenList <$> groupArgs coerce (typeOf f) as)
+
+groupArgs :: (Type -> a -> Codegen Text) -> Type -> [a] -> Codegen [[Text]]
+groupArgs genWithType ty = go ty [] where
+  go _ [] [] = pure []
+  go (CheckedType (Function arity a b)) as (r:rs) = do
+    r' <- genWithType a r
+    let as' = as ++ [r']
+    case arity of
+      Arity 1 -> (as' :) <$> go b [] rs
+      _ -> go b as' rs
+  go _ as [] = pure [as]
+  go ty _ bs = error $ "Cannot apply " <> show (length bs) <> " arguments to expression of type " <> show ty
+
+coerce :: Comonad f => Type -> Expression f -> Codegen Text
+coerce ty expr = expression expr >>= \arg -> if from == to then pure arg else wrap to arg where
+  wrap :: Int -> Text -> Codegen Text
+  wrap arity arg = do
+    let args = take arity variables -- TODO: avoid shadowing existing variables
+    call <- Text.concat . map parenList <$> groupArgs (const pure) (typeOf expr) args
+    pure $ "function" <> parenList args <> " { return " <> arg <> call <> " }"
+  from = effectiveArity (typeOf expr)
+  to = effectiveArity ty
+
+effectiveArity :: Type -> Int
+effectiveArity (CheckedType (Function (Arity n) _ _)) = n
+effectiveArity (CheckedType (Function _ _ b)) = 1 + effectiveArity b
+effectiveArity _ = 0
+
+{-
 expression (Apply (extract -> f) (extract -> a) _) = case flattenApply f a of
   -- TODO: need to build lambdas to coerce function arguments to the expected arity
   Application _ root calls partial -> maybe fullApply partialApply partial where
@@ -106,6 +138,7 @@ expression (Apply (extract -> f) (extract -> a) _) = case flattenApply f a of
       args <- traverse expression args
       full <- fullApply
       pure $ "function" <> parenList residual <> " { return " <> full <> parenList (args ++ residual) <> " }"
+-}
 
 typeDefinition :: Identifier -> Text
 typeDefinition typeName = var typeName <> " = function() {}\n"

@@ -13,6 +13,12 @@ type Expression = IR.Expression IR.Checked
 type Arg = IR.Arg IR.Checked
 type Type = IR.Type IR.Checked
 
+flatten :: Comonad f => Expression f -> Expression f -> (Expression f, [Expression f])
+flatten f x = go f [x] where
+  go f as = case f of
+    Apply g a _ -> go (extract g) (extract a : as)
+    _ -> (f, as)
+
 -- * Apply
 
 -- | Chain of function applications with an optional trailing partial application

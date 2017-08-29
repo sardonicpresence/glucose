@@ -8,7 +8,7 @@ import Control.Lens.Utils
 import Control.Monad.Except
 import Control.Monad.State
 import Data.List as List
-import Data.Map.Strict as Map
+import Data.Map.Strict as Map hiding (mapMaybe)
 import Data.Map.Utils as Map
 import Data.Maybe
 import Data.Set as Set
@@ -67,14 +67,16 @@ typeCheckExpression expr = for expr $ \case
     referenced <- uses namespace $ fmap snd . lookupVariable identifier
     maybe (typeCheckIdentifier $ identifier <$ expr) referenceVariable referenced
   Lambda args def -> do
-    typeCheckedArgs <- traverse (traverse typeCheckArg) args
-    pushArgs typeCheckedArgs
-    Lambda typeCheckedArgs <$> typeCheckExpression def
+    pushArgs =<< traverse (traverse typeCheckArg) args
+    typeCheckedExpr <- typeCheckExpression def
+    typeCheckedArgs <- popArgs
+    pure $ Lambda typeCheckedArgs typeCheckedExpr
   Apply expr arg ty -> do
     expr' <- typeCheckExpression expr
     arg' <- typeCheckExpression arg
     ty' <- checkingType newVar ty
     unifier <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
+    namespace . declaredArgs . traversed . argType %= unifier
     pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
 
 functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
@@ -100,8 +102,12 @@ pushArgs :: [f (Arg Checking)] -> TypeCheck f m ()
 pushArgs args = modifyingM namespace $ \ns ->
   foldM (flip $ handlingDuplicates declareArg) (pushScope ns) args
 
-popArgs :: TypeCheck f m ()
-popArgs = namespace %= popScope
+popArgs :: TypeCheck f m [f (Arg Checking)]
+popArgs = do
+  ns <- use namespace
+  let (vars, ns') = popScope ns
+  namespace .= ns'
+  pure $ mapMaybe (\case NS.Arg arg -> Just arg; _ -> Nothing) vars
 
 define :: Identifier -> f (Definition Checked f) -> TypeCheck f m (f (Definition Checked f))
 define name value = do

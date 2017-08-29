@@ -28,4 +28,7 @@ test = \a -> _test
 test2 = \a -> const id a
 testא = \a b -> const const a test2 b
 test5 = \a b -> id \c -> const a c
-main = \a -> test5 test2 const test5 testא foo
+call5 = \f -> f test2 const test5 testא foo
+main = \a -> call5 test5
+
+eval2 = \f a b -> f a b
