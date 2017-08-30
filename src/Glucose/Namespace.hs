@@ -40,6 +40,7 @@ pushScope (Namespace scopes) = Namespace $ Scope Map.empty : scopes
 
 popScope :: Namespace f -> ([Variable f], Namespace f)
 popScope (Namespace (Scope scope : scopes)) = (Map.elems scope, Namespace scopes)
+popScope ns = ([], ns)
 
 declare :: Comonad f => Variable f -> Namespace f -> Either (Variable f) (Namespace f)
 declare var ns = case lookupVariable (identify var) ns of

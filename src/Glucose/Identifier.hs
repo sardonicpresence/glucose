@@ -3,6 +3,7 @@ module Glucose.Identifier where
 
 import Control.Comonad
 import Control.Monad
+import Control.Monad.Identity (Identity)
 import Data.Map as Map
 import Data.Map.Utils
 import Data.String
@@ -18,6 +19,9 @@ instance IsString Identifier where
 
 class Bound f a | a -> f where
   identifier :: a -> f Identifier
+
+instance Bound Identity Identifier where
+  identifier = pure
 
 instance Bound f (f Identifier) where
   identifier = id

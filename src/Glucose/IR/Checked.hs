@@ -44,3 +44,8 @@ captures (Reference Local name _ ty) = Set.singleton $ Arg name ty
 captures (Apply expr arg _) = captures (extract expr) <> captures (extract arg)
 captures (Lambda args value) = captures (extract value) Set.\\ Set.fromList (map extract args)
 captures _ = mempty
+
+effectiveArity :: Type -> Int
+effectiveArity (CheckedType (Function (Arity n) _ _)) = n
+effectiveArity (CheckedType (Function _ _ b)) = 1 + effectiveArity b
+effectiveArity _ = 0

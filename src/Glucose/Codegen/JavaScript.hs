@@ -4,13 +4,14 @@ import Control.Comonad
 import Control.Lens
 import Control.Lens.TH ()
 import Control.Monad.RWS
-import Control.Monad.State
 import Data.Set as Set (Set, fromList, empty, insert, delete, member)
-import Data.Text as Text (Text, pack, intercalate, concat)
+import Data.Text as Text (Text, pack)
 import Glucose.Identifier
 import Glucose.IR.Checked
 import Glucose.VarGen
-import JavaScript.AST
+import JavaScript.AST (JavaScript(..))
+import qualified JavaScript.AST as JS
+import qualified JavaScript.Name as JS
 
 -- * Compiler interface
 
@@ -28,7 +29,7 @@ codegenModule (Module defs) = codegenDefinitions $ map extract defs
 codegenDefinitions :: Comonad f => [Definition f] -> JavaScript
 codegenDefinitions defs = execCodegen names $ mapAttemptM_ attemptToDefine defs where
   names = fromList $ map identify defs
-  attemptToDefine def = maybe (pure False) ((True <$) . tell) =<< definition def
+  attemptToDefine def = maybe (pure False) ((True <$) . tell . pure) =<< definition def
 
 -- * Codegen monad
 
@@ -40,7 +41,7 @@ undeclared = lens _undeclared $ \a b -> a { _undeclared = b }
 declaredTypes :: Lens' Codegenerator (Set Identifier)
 declaredTypes = lens _declaredTypes $ \a b -> a { _declaredTypes = b }
 
-type Codegen = RWS () Text Codegenerator
+type Codegen = RWS () [JS.Definition] Codegenerator
 
 execCodegen :: Set Identifier -> Codegen a -> JavaScript
 execCodegen names m = JavaScript . snd . evalRWS m () $ Codegenerator names empty
@@ -64,17 +65,12 @@ deleteWhen f as = go as where
 
 -- * Internals
 
-definition :: Comonad f => Definition f -> Codegen (Maybe Text)
+definition :: Comonad f => Definition f -> Codegen (Maybe JS.Definition)
 definition (Definition (extract -> name) def) = case extract def of
   Lambda args expr -> do
     expr <- expression (extract expr)
     undeclared %= delete name
-    -- Handle declarations of functions with reserved names
-    let decl = case name of Identifier n -> if isReserved n then var name <> " = function" else "function " <> var name
-    pure . Just $
-      decl <> argList args <> " {\n" <>
-      "  return " <> expr <> "\n" <>
-      "}\n"
+    pure . Just $ JS.Function (mkName name) (namesOf args) (Just expr)
   def -> do
     canDefineYet <- case def of
       Reference Global target _ _ -> uses undeclared $ not . member target
@@ -82,25 +78,28 @@ definition (Definition (extract -> name) def) = case extract def of
     if not canDefineYet then pure Nothing else do
       expr <- expression def
       undeclared %= delete name
-      pure . Just $ var name <> " = " <> expr <> "\n"
+      pure . Just $ JS.Assign (var name) expr
 definition (Constructor (extract -> name) (extract -> typeName) _) = do
   typeDefined <- uses declaredTypes $ member typeName
   unless typeDefined $ do
     declaredTypes %= insert typeName
-    tell $ typeDefinition typeName
+    tell [typeDefinition typeName]
   undeclared %= delete name
-  pure . Just $ var name <> " = " <> "new " <> var typeName <> "()\n"
+  pure . Just $ JS.Assign (var name) $ JS.New (referenceTo typeName) []
 
-expression :: Comonad f => Expression f -> Codegen Text
-expression (Literal a) = pure . pack $ show a
-expression (Reference _ a _ _) = pure $ var a
+expression :: Comonad f => Expression f -> Codegen JS.Expression
+expression (Literal (IntegerLiteral a)) = pure $ JS.IntegerLiteral a
+expression (Literal (FloatLiteral a)) = pure $ JS.FloatLiteral a
+expression (Reference _ a _ _) = pure $ referenceTo a
 expression (Lambda args expr) = do
   expr <- expression (extract expr)
-  pure $ "function" <> argList args <> " { return " <> expr <> " }"
-expression (Apply (extract -> expr) (extract -> args) _) = let (f, as) = flatten expr args in
-  foldl (<>) <$> expression f <*> (map parenList <$> groupArgs coerce (typeOf f) as)
+  pure $ JS.Lambda (namesOf args) (Just expr)
+expression (Apply (extract -> expr) (extract -> args) _) =
+  let (f, as) = flatten expr args
+   in foldl JS.Call <$> expression f <*> groupArgs coerce (typeOf f) as
+   -- TODO: partial application
 
-groupArgs :: (Type -> a -> Codegen Text) -> Type -> [a] -> Codegen [[Text]]
+groupArgs :: Monad m => (Type -> a -> m b) -> Type -> [a] -> m [[b]]
 groupArgs genWithType ty = go ty [] where
   go _ [] [] = pure []
   go (CheckedType (Function arity a b)) as (r:rs) = do
@@ -112,51 +111,30 @@ groupArgs genWithType ty = go ty [] where
   go _ as [] = pure [as]
   go ty _ bs = error $ "Cannot apply " <> show (length bs) <> " arguments to expression of type " <> show ty
 
-coerce :: Comonad f => Type -> Expression f -> Codegen Text
-coerce ty expr = expression expr >>= \arg -> if from == to then pure arg else wrap to arg where
-  wrap :: Int -> Text -> Codegen Text
-  wrap arity arg = do
-    let args = take arity variables -- TODO: avoid shadowing existing variables
-    call <- Text.concat . map parenList <$> groupArgs (const pure) (typeOf expr) args
-    pure $ "function" <> parenList args <> " { return " <> arg <> call <> " }"
-  from = effectiveArity (typeOf expr)
-  to = effectiveArity ty
+coerce :: Comonad f => Type -> Expression f -> Codegen JS.Expression
+coerce ty expr = do
+  let tyExpr = typeOf expr
+      from = effectiveArity tyExpr
+      to = effectiveArity ty
+  expr <- expression expr
+  if from == to then pure expr else do
+    let args = take to identifiers -- TODO: avoid shadowing existing variables
+    calls <- groupArgs (const $ pure . referenceTo) tyExpr args
+    pure $ JS.Lambda (namesOf args) (Just $ foldl JS.Call expr calls)
 
-effectiveArity :: Type -> Int
-effectiveArity (CheckedType (Function (Arity n) _ _)) = n
-effectiveArity (CheckedType (Function _ _ b)) = 1 + effectiveArity b
-effectiveArity _ = 0
-
-{-
-expression (Apply (extract -> f) (extract -> a) _) = case flattenApply f a of
-  -- TODO: need to build lambdas to coerce function arguments to the expected arity
-  Application _ root calls partial -> maybe fullApply partialApply partial where
-    fullApply = foldl (<>) <$> expression root <*> traverse (fmap parenList . traverse expression) calls
-    -- TODO: variable names can conflict with variables from outer scopes
-    partialApply (Partial ty args) = do
-      let residual = take (arity ty) variables
-      args <- traverse expression args
-      full <- fullApply
-      pure $ "function" <> parenList residual <> " { return " <> full <> parenList (args ++ residual) <> " }"
--}
-
-typeDefinition :: Identifier -> Text
-typeDefinition typeName = var typeName <> " = function() {}\n"
-
-argList :: Comonad f => [f Arg] -> Text
-argList = parenList . map (arg . extract) where
-  arg (Arg a _) = var a
-
-var :: Identifier -> Text
-var (Identifier name) = if isReserved name
-  then "global." <> name
-  else name
+typeDefinition :: Identifier -> JS.Definition
+typeDefinition typeName = JS.Assign (var typeName) (JS.Lambda [] Nothing)
 
 -- * Utilities
 
-arity :: Type -> Int
-arity (CheckedType (Function (Arity n) _ _)) = n
-arity _ = 0
+namesOf :: (Comonad f, Bound f a) => [a] -> [JS.Name]
+namesOf = map (mkName . identify)
 
-parenList :: [Text] -> Text
-parenList as = "(" <> intercalate ", " as <> ")"
+referenceTo :: Identifier -> JS.Expression
+referenceTo = JS.Reference . var
+
+var :: Identifier -> JS.Identifier
+var name = let (JS.Name mangled) = mkName name in JS.Identifier [mangled]
+
+mkName :: Identifier -> JS.Name
+mkName (Identifier name) = JS.mkName name
