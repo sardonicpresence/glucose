@@ -32,3 +32,6 @@ call5 = \f -> f test2 const test5 testא foo
 main = \a -> call5 test5
 
 eval2 = \f a b -> f a b
+
+baz = \a -> const a
+gaz = baz foo foo

@@ -82,11 +82,11 @@ expression (Reference Global (Identifier (mkName -> name)) rep _) =
         CheckedType IR.Function{} -> pure ref
         _ -> load ref
 expression (Lambda args def) = withNewGlobal $ \name -> buildLambda name Private (map extract args) (extract def)
-expression (Apply (extract -> f) (extract -> args) _) = case flattenApply f args of
-  Application rep root calls partial -> maybe full partialApply partial where
-    full = do
-      fn <- expression root
-      foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
+-- expression (Apply (extract -> f) (extract -> args) _) = case flattenApply f args of
+--   Application rep root calls partial -> maybe full partialApply partial where
+--     full = do
+--       fn <- expression root
+--       foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
 
 -- traced :: (a -> String) -> a -> a
 -- traced f a = trace (f a) a

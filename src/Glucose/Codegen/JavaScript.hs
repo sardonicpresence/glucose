@@ -8,7 +8,6 @@ import Data.Set as Set (Set, fromList, empty, insert, delete, member)
 import Data.Text as Text (Text, pack)
 import Glucose.Identifier
 import Glucose.IR.Checked
-import Glucose.VarGen
 import JavaScript.AST (JavaScript(..))
 import qualified JavaScript.AST as JS
 import qualified JavaScript.Name as JS
@@ -87,6 +86,9 @@ definition (Constructor (extract -> name) (extract -> typeName) _) = do
   undeclared %= delete name
   pure . Just $ JS.Assign (var name) $ JS.New (referenceTo typeName) []
 
+typeDefinition :: Identifier -> JS.Definition
+typeDefinition typeName = JS.Assign (var typeName) (JS.Lambda [] Nothing)
+
 expression :: Comonad f => Expression f -> Codegen JS.Expression
 expression (Literal (IntegerLiteral a)) = pure $ JS.IntegerLiteral a
 expression (Literal (FloatLiteral a)) = pure $ JS.FloatLiteral a
@@ -94,38 +96,34 @@ expression (Reference _ a _ _) = pure $ referenceTo a
 expression (Lambda args expr) = do
   expr <- expression (extract expr)
   pure $ JS.Lambda (namesOf args) (Just expr)
-expression (Apply (extract -> expr) (extract -> args) _) =
-  let (f, as) = flatten expr args
-   in foldl JS.Call <$> expression f <*> groupArgs coerce (typeOf f) as
-   -- TODO: partial application
+expression (Apply (extract -> expr) (extract -> args) _) = do
+  let coerceArgs = traverse $ uncurry coerce
+  uncurry (callChain coerceArgs) $ flatten expr args
 
-groupArgs :: Monad m => (Type -> a -> m b) -> Type -> [a] -> m [[b]]
-groupArgs genWithType ty = go ty [] where
-  go _ [] [] = pure []
-  go (CheckedType (Function arity a b)) as (r:rs) = do
-    r' <- genWithType a r
-    let as' = as ++ [r']
-    case arity of
-      Arity 1 -> (as' :) <$> go b [] rs
-      _ -> go b as' rs
-  go _ as [] = pure [as]
-  go ty _ bs = error $ "Cannot apply " <> show (length bs) <> " arguments to expression of type " <> show ty
-
+{- | Coerces functions to an expected arity by wrapping with a lambda if required. -}
 coerce :: Comonad f => Type -> Expression f -> Codegen JS.Expression
-coerce ty expr = do
-  let tyExpr = typeOf expr
-      from = effectiveArity tyExpr
-      to = effectiveArity ty
-  expr <- expression expr
-  if from == to then pure expr else do
-    let args = take to identifiers -- TODO: avoid shadowing existing variables
-    calls <- groupArgs (const $ pure . referenceTo) tyExpr args
-    pure $ JS.Lambda (namesOf args) (Just $ foldl JS.Call expr calls)
+coerce ty expr = if from == to then expression expr else lambda to $ \args -> callChain call expr args where
+  from = effectiveArity $ typeOf expr
+  to = effectiveArity ty
+  call = pure . map (referenceTo . snd)
 
-typeDefinition :: Identifier -> JS.Definition
-typeDefinition typeName = JS.Assign (var typeName) (JS.Lambda [] Nothing)
+callChain :: Comonad f => (Call a -> Codegen [JS.Expression]) -> Expression f -> [a] -> Codegen JS.Expression
+callChain call f as = do
+  let (Application calls partial) = groupApplication (typeOf f) as
+  fullApplications <- foldl JS.Call <$> expression f <*> traverse call calls
+  maybe (pure fullApplications) (partialApplication call fullApplications) partial
+
+partialApplication :: Monad f => (Call a -> f [JS.Expression]) -> JS.Expression -> Partial a -> f JS.Expression
+partialApplication call f (Partial arity as) = call as >>= \as ->
+  lambda arity $ \args -> pure $ JS.Call f (as ++ map referenceTo args)
+
+lambda :: Functor f => Int -> ([Identifier] -> f JS.Expression) -> f JS.Expression
+lambda arity f = let args = map positional [1..arity] in JS.Lambda (namesOf args) . Just <$> f args
 
 -- * Utilities
+
+positional :: Int -> Identifier
+positional = Identifier . pack . ("$" <>) . show
 
 namesOf :: (Comonad f, Bound f a) => [a] -> [JS.Name]
 namesOf = map (mkName . identify)
