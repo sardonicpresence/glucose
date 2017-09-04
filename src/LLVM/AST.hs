@@ -30,7 +30,7 @@ data Assignment = Call Expression [Expression]
                 | GEP Expression [Expression]
                 | Convert ConversionOp Expression Type
                 | BinaryOp BinaryOp Expression Expression
-                | Phi [(Expression, Name)]
+                | Phi (Expression, Name) [(Expression, Name)]
                 | Alloca Type Expression
   deriving (Eq)
 
@@ -94,7 +94,7 @@ instance References Assignment where
   expressions f (GEP ptr indices) = GEP <$> f ptr <*> traverse f indices
   expressions f (Convert op arg ty) = Convert op <$> f arg <*> pure ty
   expressions f (BinaryOp op a b) = BinaryOp op <$> f a <*> f b
-  expressions f (Phi preds) = Phi <$> traverse (traverseOf _1 f) preds
+  expressions f (Phi pred preds) = Phi <$> _1 f pred <*> traverse (_1 f) preds
   expressions f (Alloca ty n) = Alloca ty <$> f n
 
 -- * Show instances
@@ -146,7 +146,7 @@ instance Show Assignment where
     "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
   show (Convert op expr ty) = show op ++ " " ++ withType expr ++ " to " ++ show ty
   show (BinaryOp op a b) = show op ++ " " ++ withType a ++ ", " ++ show b
-  show phi@(Phi preds) = "phi " ++ show (typeOf phi) ++ " " ++ intercalate ", " (map showPred preds) where
+  show phi@(Phi pred preds) = "phi " ++ show (typeOf phi) ++ " " ++ intercalate ", " (map showPred $ pred:preds) where
     showPred (value, label) = "[" ++ show value ++ ", " ++ local label ++ "]"
   show (Alloca ty n) = "alloca " ++ show ty ++ ", " ++ withType n ++ ", align 16"
 
@@ -293,7 +293,7 @@ instance Typed Assignment where
           _ -> error "cannot use a non-constant expression to index into a structure type"
   typeOf (Convert _ _ ty) = ty
   typeOf (BinaryOp op a _) = opType op $ typeOf a
-  typeOf (Phi ((a,_):_)) = typeOf a
+  typeOf (Phi (a,_) _) = typeOf a
   typeOf (Alloca ty _) = Ptr ty
 
 instance Typed Terminator where

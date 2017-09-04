@@ -35,3 +35,6 @@ eval2 = \f a b -> f a b
 
 baz = \a -> const a
 gaz = baz foo foo
+
+goo = \a -> \b c -> a
+hoo = goo foo id

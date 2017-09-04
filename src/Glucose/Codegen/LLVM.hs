@@ -19,80 +19,78 @@ import LLVM.AST as LLVM
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
 
-type Codegen = Writer (Set.Set GeneratedFn)
-
-type LLVM a = LLVMT (NameGenT Codegen) a
-
 win64 :: Target
 win64 = Target (DataLayout LittleEndian Windows [(LLVM.I 64, 64, Nothing)] [8,16,32,64] (Just 128))
                (Triple "x86_64" "pc" "windows")
 
+-- * Compiler interface
+
 codegen :: Comonad f => IR.Module f -> Text
 codegen = pack . show . codegenModule
+
+codegenModuleDefinitions :: Comonad f => IR.Module f -> Text
+codegenModuleDefinitions (IR.Module defs) = pack . concatMap show . codegenDefinitions $ map extract defs
+
+-- * Test interface
 
 codegenModule :: Comonad f => IR.Module f -> LLVM.Module
 codegenModule (IR.Module []) = LLVM.Module win64 []
 codegenModule (IR.Module defs) = LLVM.Module win64 $ amble ++ codegenDefinitions (map extract defs)
 
-codegenModuleDefinitions :: Comonad f => IR.Module f -> Text
-codegenModuleDefinitions (IR.Module defs) = pack . concatMap show . codegenDefinitions $ map extract defs
-
 codegenDefinitions :: Comonad f => [IR.Definition f] -> [LLVM.Global]
 codegenDefinitions = runCodegen . execLLVMT . mapM_ definition
 
+-- * Codegen monad
+
+type LLVM a = LLVMT (NameGenT Codegen) a
+
+type Codegen = Writer (Set.Set GeneratedFn)
+
 runCodegen :: Codegen [LLVM.Global] -> [LLVM.Global]
-runCodegen a = case runWriter a of
-  (defs, toGenerate) -> map generateFunction (Set.toList toGenerate) ++ defs
+runCodegen a = let (defs, toGenerate) = runWriter a in map generateFunction (Set.toList toGenerate) ++ defs
+
+-- * Internals
 
 definition :: Comonad f => Definition f -> LLVMT Codegen ()
-definition (Definition (extract -> Identifier n) def) = let name = mkName n in
+definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
-    Reference Global (Identifier to) rep _ -> alias name (GlobalReference (mkName to) $ llvmType rep) (llvmType rep)
+    Reference Global to rep _ -> alias name (GlobalReference (nameOf to) $ llvmType rep) (llvmType rep)
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
       void $ defineFunction name External llvmArgs (ret =<< expression (extract expr))
     _ -> void $ defineVariable name External $ expression (extract def)
-definition (Constructor (extract -> Identifier n) _ index) = let name = mkName n in
+definition (Constructor (nameOf -> name) _ index) =
   void $ defineVariable name External (pure $ i32 index)
-
-defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
-defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
-  defineFunction (slowName name) External [pargs] $ do
-    let (boxed, unboxed, unboxedType) = splitArgs argTypes
-    let argsType = Struct [Array (length boxed) box, unboxedType]
-    pargs' <- bitcast (argReference pargs) (Ptr argsType)
-    argsBoxed <- for [0..length boxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 0, integer arity i]
-    argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, integer arity i]
-    let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
-    ret =<< call fn args
-defineWrapper _ = error "Can only define wrappers for global functions!"
-
-slowName :: Name -> Name
-slowName (Name n) = Name $ n <> "$$"
-
-argument :: IR.Arg -> LLVM.Arg
-argument (IR.Arg (Identifier name) ty) = LLVM.Arg (mkName name) (llvmType ty)
 
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
-expression (Reference Local (Identifier (mkName -> name)) rep _) = pure $ LLVM.LocalReference name (llvmType rep)
-expression (Reference Global (Identifier (mkName -> name)) rep _) =
+expression (Reference Local (nameOf -> name) rep _) = pure $ LLVM.LocalReference name (llvmType rep)
+expression (Reference Global (nameOf -> name) rep _) =
   let ref = LLVM.GlobalReference name (llvmType rep)
    in case rep of
         CheckedType IR.Function{} -> pure ref
         _ -> load ref
-expression (Lambda args def) = withNewGlobal $ \name -> buildLambda name Private (map extract args) (extract def)
--- expression (Apply (extract -> f) (extract -> args) _) = case flattenApply f args of
---   Application rep root calls partial -> maybe full partialApply partial where
---     full = do
---       fn <- expression root
---       foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
+expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \name ->
+  buildLambda name Private args def
+-- expression (Apply (extract -> f) (extract -> args) _) = do
+--   let (Application calls partial) = groupApplication (IR.typeOf f) args
+--   fullApplications <- foldl genCall <$> expression f <*> traverse call calls
+--   maybe (pure fullApplications) (partialApplication call fullApplications) partial
+
+
+  -- Application rep root calls partial -> maybe full partialApply partial where
+  --   full = do
+  --     fn <- expression root
+  --     foldlM genCall fn $ callsWithTypes rep (IR.typeOf root) calls
 
 -- traced :: (a -> String) -> a -> a
 -- traced f a = trace (f a) a
 
 -- logCalls :: [([IR.Expression f], IR.Type, IR.Type)] -> String
 -- logCalls = foldMap $ \(args, rep, ty) -> "[" ++ show rep ++ " <as> " ++ show ty ++ "](" ++ intercalate ", " (map show args) ++ ")\n"
+
+argument :: IR.Arg -> LLVM.Arg
+argument (IR.Arg name ty) = LLVM.Arg (nameOf name) (llvmType ty)
 
 callsWithTypes :: IR.Type -> IR.Type -> [[IR.Expression f]] -> [([IR.Expression f], IR.Type, IR.Type)]
 callsWithTypes rep ty calls = zip3 calls (map fst foo) (map snd foo) where
@@ -108,6 +106,18 @@ buildLambda name linkage args def = do
     else do
       slow <- defineWrapper lambda
       buildClosure (length fnArgs) slow $ map argReference captured
+
+defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
+defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
+  defineFunction (slowName name) External [pargs] $ do
+    let (boxed, unboxed, unboxedType) = splitArgs argTypes
+    let argsType = Struct [Array (length boxed) box, unboxedType]
+    pargs' <- bitcast (argReference pargs) (Ptr argsType)
+    argsBoxed <- for [0..length boxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 0, integer arity i]
+    argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, integer arity i]
+    let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
+    ret =<< call fn args
+defineWrapper _ = error "Can only define wrappers for global functions!"
 
 withNewGlobal :: (Name -> LLVM a) -> LLVM a
 withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name) (f name)
@@ -181,6 +191,9 @@ bitcastFunctionRef :: LLVM.Expression -> LLVM.Expression
 bitcastFunctionRef a@(LLVM.GlobalReference _ LLVM.Function{}) = ConstConvert LLVM.Bitcast a box
 bitcastFunctionRef a = a
 
+slowName :: Name -> Name
+slowName (Name n) = Name $ n <> "$$"
+
 repType :: IR.Type -> IR.Type -> IR.Type
 repType (CheckedType Polymorphic{}) ty = ty
 repType rep _ = rep
@@ -215,6 +228,9 @@ llvmType (CheckedType ty) = case ty of
 varType :: LLVM.Type -> LLVM.Type -- TODO: repType . typeRep
 varType LLVM.Function{} = box
 varType a = a
+
+nameOf :: (Bound f a, Comonad f) => a -> Name
+nameOf name = case identify name of Identifier n -> mkName n
 
 amble :: [LLVM.Global]
 amble = typeDeclarations ++ functionDeclarations

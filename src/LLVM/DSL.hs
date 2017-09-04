@@ -158,7 +158,8 @@ binaryOp :: Monad m => BinaryOp -> Expression -> Expression -> LLVMT m Expressio
 binaryOp = ((assignNew .) .) . BinaryOp
 
 phi :: Monad m => [(Expression, Name)] -> LLVMT m Expression
-phi = assignNew . Phi
+phi (pred:preds) = assignNew $ Phi pred preds
+phi [] = error "Phi node must have at least one predecessor"
 
 label :: Monad m => Name -> LLVMT m ()
 label name = maybeLabel .= Just name
@@ -218,16 +219,16 @@ f64 :: Double -> Expression
 f64 = float F64
 
 integer :: Integral a => Type -> a -> Expression
-integer (I bits) value = Literal $ IntegerLiteral Nothing bits (fromIntegral value)
-integer (Custom name ty) value = case integer ty value of
-  Literal (IntegerLiteral _ bits value) -> Literal $ IntegerLiteral (Just name) bits value
-integer ty _ = error $ "not a valid type for an integer literal: " ++ show ty
+integer ty value = let (name, ty', value') = go ty value in Literal $ IntegerLiteral name ty' value' where
+  go (I bits) value = (Nothing, bits, fromIntegral value)
+  go (Custom name ty) value = go ty value & _1 .~ Just name
+  go ty _ = error $ "not a valid type for an integer literal: " ++ show ty
 
 float ::  Real a => Type -> a -> Expression
-float F64 value = Literal $ FloatLiteral Nothing (fromRational $ toRational value)
-float (Custom name ty) value = case float ty value of
-  Literal (FloatLiteral _ value) -> Literal $ FloatLiteral (Just name) value
-float ty _ = error $ "not a valid type for a floating-point literal: " ++ show ty
+float ty value = let (name, value') = go ty value in Literal $ FloatLiteral name value' where
+  go F64 value = (Nothing, fromRational $ toRational value)
+  go (Custom name ty) value = go ty value & _1 .~ Just name
+  go ty _ = error $ "not a valid type for a floating-point literal: " ++ show ty
 
 undef :: Type -> Expression
 undef = Undefined

@@ -1,4 +1,3 @@
-{-# LANGUAGE UndecidableInstances #-}
 module Glucose.Codegen.LLVM.NameGen where
 
 import Control.Arrow ((&&&))
