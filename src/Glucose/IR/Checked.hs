@@ -90,7 +90,7 @@ groupApplication ty = go ty [] where
 --   apply b _ _ = error $ "Cannot supply arguments to non-function " ++ show b -- TODO: improve & move
 
 captures :: Comonad f => Expression f -> Set.Set Arg
-captures (Reference Local name _ ty) = Set.singleton $ Arg name ty
+captures (Reference Local name ty) = Set.singleton $ Arg name ty
 captures (Apply expr arg _) = captures (extract expr) <> captures (extract arg)
 captures (Lambda args value) = captures (extract value) Set.\\ Set.fromList (map extract args)
 captures _ = mempty

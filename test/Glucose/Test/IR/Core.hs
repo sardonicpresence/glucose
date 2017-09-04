@@ -28,4 +28,4 @@ definition :: (Applicative f, Comonad f) => f Text -> f (Expression ann f) -> f 
 definition name value = Definition <$> duplicate (Identifier <$> name) <*> duplicate value
 
 reference :: Functor f => Ref ann -> f Text -> Type ann -> f (Expression ann f)
-reference kind name ty = (\n -> Reference kind (Identifier n) ty ty) <$> name
+reference kind name ty = (\n -> Reference kind (Identifier n) ty) <$> name

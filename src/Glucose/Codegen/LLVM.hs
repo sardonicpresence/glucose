@@ -54,7 +54,7 @@ runCodegen a = let (defs, toGenerate) = runWriter a in map generateFunction (Set
 definition :: Comonad f => Definition f -> LLVMT Codegen ()
 definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
-    Reference Global to rep _ -> alias name (GlobalReference (nameOf to) $ llvmType rep) (llvmType rep)
+    Reference Global to ty -> alias name (GlobalReference (nameOf to) $ llvmType ty) (llvmType ty)
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
       void $ defineFunction name External llvmArgs (ret =<< expression (extract expr))
@@ -64,8 +64,8 @@ definition (Constructor (nameOf -> name) _ index) =
 
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
-expression (Reference Local (nameOf -> name) ty _) = pure $ LLVM.LocalReference name (llvmType ty)
-expression (Reference Global (nameOf -> name) ty _) = case ty of
+expression (Reference Local (nameOf -> name) ty) = pure $ LLVM.LocalReference name (llvmType ty)
+expression (Reference Global (nameOf -> name) ty) = case ty of
   CheckedType IR.Function{} -> pure $ LLVM.GlobalReference name (llvmType ty)
   _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
 expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \name ->

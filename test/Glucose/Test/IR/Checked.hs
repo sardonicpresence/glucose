@@ -11,4 +11,4 @@ alias :: (Comonad f, Applicative f) => f Text -> f Text -> DataType (Type Checke
 alias to from ty = definition to $ reference Global from $ Type $ Checked ty
 
 aliasAnywhere :: (Comonad f, Applicative f) => Text -> Text -> DataType (Type Checked) -> f (Definition Checked f)
-aliasAnywhere to from ty = definitionAnywhere to $ Reference Global (Identifier from) (Type $ Checked ty) (Type $ Checked ty)
+aliasAnywhere to from ty = definitionAnywhere to $ Reference Global (Identifier from) (Type $ Checked ty)

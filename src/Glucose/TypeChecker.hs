@@ -63,7 +63,7 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
 typeCheckExpression :: f (Expression Unchecked f) -> TypeCheck f m (f (Expression Checking f))
 typeCheckExpression expr = for expr $ \case
   Literal literal -> pure $ Literal literal
-  Reference _ identifier _ _ -> do
+  Reference _ identifier _ -> do
     referenced <- uses namespace $ fmap snd . lookupVariable identifier
     maybe (typeCheckIdentifier $ identifier <$ expr) referenceVariable referenced
   Lambda args def -> do
@@ -130,10 +130,10 @@ referenceVariable (NS.Definition def) = referenceTo $ extract def
 referenceVariable (NS.Arg arg) = pure . referenceArg $ extract arg
 
 referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checking f)
-referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def) (typeOf def)
+referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def)
 
 referenceArg :: Arg Checking -> Expression Checking f
-referenceArg (Arg name ty) = Reference Local name ty ty
+referenceArg (Arg name ty) = Reference Local name ty
 
 freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
 freeTypes = remap $ typeAnnotations . free

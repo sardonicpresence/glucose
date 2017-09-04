@@ -25,7 +25,7 @@ expression (AST.Apply f a) = IR.Apply <$> mapC expression f <*> mapC value a <*>
 
 value :: (Applicative m, Traversable m) => Comonad f => AST.Value f -> m (IR.Expression Unchecked f)
 value (AST.Literal lit) = IR.Literal <$> literal lit
-value (AST.Variable name) = pure $ IR.Reference () name (Type Untyped) (Type Untyped)
+value (AST.Variable name) = pure $ IR.Reference () name (Type Untyped)
 value (AST.Lambda args expr) = IR.Lambda <$> traverse (mapC arg) args <*> mapC expression expr
 
 arg :: Applicative m => Identifier -> m (IR.Arg Unchecked)

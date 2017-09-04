@@ -72,7 +72,7 @@ definition (Definition (extract -> name) def) = case extract def of
     pure . Just $ JS.Function (mkName name) (namesOf args) (Just expr)
   def -> do
     canDefineYet <- case def of
-      Reference Global target _ _ -> uses undeclared $ not . member target
+      Reference Global target _ -> uses undeclared $ not . member target
       _ -> pure True
     if not canDefineYet then pure Nothing else do
       expr <- expression def
@@ -92,7 +92,7 @@ typeDefinition typeName = JS.Assign (var typeName) (JS.Lambda [] Nothing)
 expression :: Comonad f => Expression f -> Codegen JS.Expression
 expression (Literal (IntegerLiteral a)) = pure $ JS.IntegerLiteral a
 expression (Literal (FloatLiteral a)) = pure $ JS.FloatLiteral a
-expression (Reference _ a _ _) = pure $ referenceTo a
+expression (Reference _ a _) = pure $ referenceTo a
 expression (Lambda args expr) = do
   expr <- expression (extract expr)
   pure $ JS.Lambda (namesOf args) (Just expr)
