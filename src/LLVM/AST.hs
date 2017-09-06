@@ -264,9 +264,9 @@ instance Typed Type where
 instance Typed Global where
   typeOf (VariableDefinition _ _ expr) = typeOf expr
   typeOf (Alias _ _ ty) = Ptr ty
-  typeOf (FunctionDefinition _ _ args blocks) = Function (defReturnType blocks) $ map typeOf args
-  typeOf (TypeDef _ ty) = ty
-  typeOf (FunctionDeclaration _ result args _) = Function (typeOf result) (map typeOf args)
+  typeOf (FunctionDefinition _ _ args blocks) = Ptr $ Function (defReturnType blocks) $ map typeOf args
+  typeOf TypeDef{} = undefined
+  typeOf (FunctionDeclaration _ result args _) = Ptr $ Function (typeOf result) (map typeOf args)
 
 instance Typed a => Typed (Parameter a) where
   typeOf = typeOf . parameter
@@ -303,7 +303,7 @@ instance Typed Terminator where
 instance Typed Expression where
   typeOf (Literal value) = typeOf value
   typeOf (Undefined ty) = ty
-  typeOf (GlobalReference _ ty) = Ptr ty
+  typeOf (GlobalReference _ ty) = ty
   typeOf (LocalReference _ ty) = ty
   typeOf (ConstConvert _ _ ty) = ty
   typeOf (ConstBinaryOp op a _) = opType op $ typeOf a
@@ -329,7 +329,7 @@ opType _ ty = ty
 
 deref :: Type -> Type
 deref (Ptr a) = a
-deref a = a
+deref ty = error $ "Expected pointer instead of " ++ show ty
 
 argTypes :: Type -> [Type]
 argTypes (Function to from) = from ++ argTypes to

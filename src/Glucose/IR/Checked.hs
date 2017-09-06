@@ -3,14 +3,15 @@ module Glucose.IR.Checked
   module Glucose.IR,
   Module, Definition, Expression, Arg, Type,
   Call, Partial(..), Application(..),
-  flatten, groupApplication, captures, effectiveArity
+  flattenApplication, flatten, groupApplication, captures, effectiveArity
 )
 where
 
 import Control.Applicative
 import Control.Comonad.Utils
 import Control.Lens
-import Data.Monoid
+import Data.List (intercalate)
+import Data.Semigroup (Semigroup(..))
 import qualified Data.Set as Set
 import Glucose.IR hiding (Module(), Definition(), Expression(), Arg(), Type())
 import qualified Glucose.IR as IR
@@ -32,32 +33,39 @@ flatten f x = go f [x] where
 
 type Call a = [(Type, a)]
 data Partial a = Partial Int (Call a)
-data Application a = Application [Call a] (Maybe (Partial a))
+data Application a = Application Type [Call a] (Maybe (Partial a))
 
-instance Monoid (Application a) where
-  mempty = Application [] Nothing
-  (Application as b) `mappend` (Application cs d) = Application (as <> cs) (b <|> d)
+showCall args = "(" <> intercalate "," (map (\(ty, a) -> show a `IR.withType` ty) args) <> ")"
+
+instance Show a => Show (Application a) where
+  show (Application ty calls Nothing) = "f" <> concatMap showCall calls
+  show (Application ty calls (Just (Partial n call))) = let lambdaArgs = map (("$"<>) . show) [1..n] in
+    "\\" <> unwords lambdaArgs <> " -> " <> show (Application ty calls Nothing) <> "(" <>
+    intercalate ", " (map (\(ty, a) -> show a `IR.withType` ty) call ++ lambdaArgs) <> ")"
+
+instance Semigroup (Application a) where
+  (Application _ as b) <> (Application ty cs d) = Application ty (as <> cs) (b <|> d)
   -- TODO: Use of <|> is a bit dodgy as we should never have 2 partial applications
 
-fullApplication :: Call a -> Application a
-fullApplication as = Application [as] Nothing
+fullApplication :: Type -> Call a -> Application a
+fullApplication result as = Application result [as] Nothing
 
-partialApplication :: Int -> Call a -> Application a
-partialApplication arity = Application[] . Just . Partial arity
+partialApplication :: Type -> Int -> Call a -> Application a
+partialApplication result arity = Application result [] . Just . Partial arity
 
 {- | Groups arguments into one or more calls given a function type to apply them to.
  - Each call is returned as a list of arguments paired with their expected types.
  -}
 groupApplication :: Type -> [a] -> Application a
 groupApplication ty = go ty [] where
-  go _ [] [] = mempty
-  go (CheckedType (Function (Arity arity) a b)) as [] | arity > 0 = partialApplication arity as
+  go ty [] [] = Application ty [] Nothing
+  go ty@(CheckedType (Function (Arity arity) a b)) as [] | arity > 0 = partialApplication ty arity as
   go (CheckedType (Function arity a b)) as (r:rs) =
     let as' = (a, r) : as in
     case arity of
-      Arity 1 -> fullApplication (reverse as') <> go b [] rs
+      Arity 1 -> fullApplication b (reverse as') <> go b [] rs
       _ -> go b as' rs
-  go _ as [] = fullApplication $ reverse as
+  go ty as [] = fullApplication ty $ reverse as
   go ty _ bs = error $ "Cannot apply " <> show (length bs) <> " arguments to expression of type " <> show ty
 
 

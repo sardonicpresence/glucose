@@ -19,6 +19,8 @@ import LLVM.AST as LLVM
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
 
+import Debug.Trace
+
 win64 :: Target
 win64 = Target (DataLayout LittleEndian Windows [(LLVM.I 64, 64, Nothing)] [8,16,32,64] (Just 128))
                (Triple "x86_64" "pc" "windows")
@@ -64,19 +66,29 @@ definition (Constructor (nameOf -> name) _ index) =
 
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
-expression (Reference Local (nameOf -> name) rep _) = pure $ LLVM.LocalReference name (llvmType rep)
-expression (Reference Global (nameOf -> name) rep _) =
-  let ref = LLVM.GlobalReference name (llvmType rep)
-   in case rep of
-        CheckedType IR.Function{} -> pure ref
-        _ -> load ref
+expression (Reference Local (nameOf -> name) ty _) = pure $ LLVM.LocalReference name (llvmType ty)
+expression (Reference Global (nameOf -> name) ty _) = case ty of
+  CheckedType IR.Function{} -> pure $ LLVM.GlobalReference name (llvmType ty)
+  _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
 expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \name ->
   buildLambda name Private args def
--- expression (Apply (extract -> f) (extract -> args) _) = do
---   let (Application calls partial) = groupApplication (IR.typeOf f) args
---   fullApplications <- foldl genCall <$> expression f <*> traverse call calls
---   maybe (pure fullApplications) (partialApplication call fullApplications) partial
+expression (Apply (extract -> f) (extract -> x) _) = do
+  let (g, as) = flatten f x
+  g' <- expression g
+  let (Application result calls partial) = groupApplication (IR.typeOf g) as
+  let results = replicate (length calls - 1) fn ++ [maybe fn (const $ llvmType result) partial]
+  fullApplications <- foldlM genCall g' (zip results calls)
+  maybe (pure fullApplications) (partialApplication fullApplications) partial
 
+genCall :: Comonad f => LLVM.Expression -> (LLVM.Type, Call (IR.Expression f)) -> LLVM LLVM.Expression
+genCall f (retType, args) = do
+  ssaArgs <- traverse (\(ty, arg) -> asArg (llvmType ty) =<< expression arg) args
+  case LLVM.typeOf f of
+    Ptr LLVM.Function{} -> LLVM.call f ssaArgs
+    _ -> do
+      fnApply <- getApply ApplyUnknown retType (map (llvmType . fst) args)
+      result <- LLVM.call fnApply (ssaArgs ++ [bitcastFunctionRef f])
+      asArg retType result
 
   -- Application rep root calls partial -> maybe full partialApply partial where
   --   full = do
@@ -108,7 +120,7 @@ buildLambda name linkage args def = do
       buildClosure (length fnArgs) slow $ map argReference captured
 
 defineWrapper :: LLVM.Expression -> LLVM LLVM.Expression
-defineWrapper fn@(GlobalReference name (LLVM.Function _ argTypes)) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
+defineWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = let pargs = LLVM.Arg (mkName "args") (Ptr box) in
   defineFunction (slowName name) External [pargs] $ do
     let (boxed, unboxed, unboxedType) = splitArgs argTypes
     let argsType = Struct [Array (length boxed) box, unboxedType]
@@ -142,23 +154,23 @@ buildClosure narity f args = do
     store arg =<< getelementptr pclosure [i64 0, i32 5, integer arity i]
   pure ptr
 
-partialApply :: Partial f -> LLVM LLVM.Expression
-partialApply _ = undefined -- TODO: partial application
+partialApplication :: LLVM.Expression -> Partial f -> LLVM LLVM.Expression
+partialApplication f (Partial n args) = error $ "Partial application of " <> show (length args) <> " arguments to " <> show f <> " leaving arity " <> show n
 
-genCall :: Comonad f => LLVM.Expression -> ([IR.Expression f], IR.Type, IR.Type) -> LLVM LLVM.Expression
-genCall fn (params, llvmType -> rep, llvmType -> ty) = do
-  ssaArgs <- zipWithM asArg (LLVM.argTypes rep) =<< traverse expression params
-  case rep of
-    LLVM.Function retType argTypes ->
-      case LLVM.typeOf fn of
-        Ptr LLVM.Function{} -> LLVM.call fn ssaArgs
-        _ -> do
-          fnApply <- getApply ApplyUnknown retType argTypes
-          result <- LLVM.call fnApply (ssaArgs ++ [bitcastFunctionRef fn])
-          asArg (LLVM.returnType ty) result
-      -- ssaFn <- asFunction fn $ LLVM.Ptr ty
-      -- LLVM.call ssaFn ssaArgs
-    _ -> error $ "Unsupported: " <> show ty -- TODO
+-- genCall :: Comonad f => LLVM.Expression -> ([IR.Expression f], IR.Type, IR.Type) -> LLVM LLVM.Expression
+-- genCall fn (params, llvmType -> rep, llvmType -> ty) = do
+--   ssaArgs <- zipWithM asArg (LLVM.argTypes rep) =<< traverse expression params
+--   case rep of
+--     LLVM.Function retType argTypes ->
+--       case LLVM.typeOf fn of
+--         Ptr LLVM.Function{} -> LLVM.call fn ssaArgs
+--         _ -> do
+--           fnApply <- getApply ApplyUnknown retType argTypes
+--           result <- LLVM.call fnApply (ssaArgs ++ [bitcastFunctionRef fn])
+--           asArg (LLVM.returnType ty) result
+--       -- ssaFn <- asFunction fn $ LLVM.Ptr ty
+--       -- LLVM.call ssaFn ssaArgs
+--     _ -> error $ "Unsupported: " <> show ty -- TODO
 
 getApply :: ApplyType -> LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
 getApply _ returnTy tys = do
@@ -219,7 +231,7 @@ llvmType (CheckedType ty) = case ty of
   Polymorphic{} -> box
   ADT{} -> LLVM.I 32
   IR.Function UnknownArity _ _ -> fn
-  IR.Function (Arity n) (varType . llvmType -> from) (llvmType -> to) -> case to of
+  IR.Function (Arity n) (varType . llvmType -> from) (llvmType -> to) -> Ptr $ case to of
     LLVM.Function f as -> if n == 1
       then LLVM.Function box [from]
       else LLVM.Function f (from : as)

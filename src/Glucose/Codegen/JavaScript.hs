@@ -96,9 +96,9 @@ expression (Reference _ a _ _) = pure $ referenceTo a
 expression (Lambda args expr) = do
   expr <- expression (extract expr)
   pure $ JS.Lambda (namesOf args) (Just expr)
-expression (Apply (extract -> expr) (extract -> args) _) = do
+expression (Apply (extract -> f) (extract -> x) _) = do
   let coerceArgs = traverse $ uncurry coerce
-  uncurry (callChain coerceArgs) $ flatten expr args
+  uncurry (callChain coerceArgs) $ flatten f x
 
 {- | Coerces functions to an expected arity by wrapping with a lambda if required. -}
 coerce :: Comonad f => Type -> Expression f -> Codegen JS.Expression
@@ -109,7 +109,7 @@ coerce ty expr = if from == to then expression expr else lambda to $ \args -> ca
 
 callChain :: Comonad f => (Call a -> Codegen [JS.Expression]) -> Expression f -> [a] -> Codegen JS.Expression
 callChain call f as = do
-  let (Application calls partial) = groupApplication (typeOf f) as
+  let (Application _ calls partial) = groupApplication (typeOf f) as
   fullApplications <- foldl JS.Call <$> expression f <*> traverse call calls
   maybe (pure fullApplications) (partialApplication call fullApplications) partial
 

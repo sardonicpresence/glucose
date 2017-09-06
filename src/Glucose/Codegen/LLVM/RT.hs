@@ -67,10 +67,10 @@ memcpy to from bytes align = do
   -- label "Done"
 
 callFn :: Monad m => (Name, Parameter Type, [Type], FunctionAttributes) -> [Expression] -> LLVMT m Expression
-callFn (name, result, args, _) = call $ GlobalReference name $ Function (parameter result) args
+callFn (name, result, args, _) = call $ GlobalReference name . Ptr $ Function (parameter result) args
 
 callFn_ :: Monad m => (Name, Parameter Type, [Type], FunctionAttributes) -> [Expression] -> LLVMT m ()
-callFn_ (name, result, args, _) = call_ $ GlobalReference name $ Function (parameter result) args
+callFn_ (name, result, args, _) = call_ $ GlobalReference name . Ptr $ Function (parameter result) args
 
 splitArgs :: [Type] -> ([Int], [Int], Type)
 splitArgs tys = (fst boxed, fst unboxed, Packed $ snd unboxed) where
