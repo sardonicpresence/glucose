@@ -19,8 +19,6 @@ import LLVM.AST as LLVM
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
 
-import Debug.Trace
-
 win64 :: Target
 win64 = Target (DataLayout LittleEndian Windows [(LLVM.I 64, 64, Nothing)] [8,16,32,64] (Just 128))
                (Triple "x86_64" "pc" "windows")
@@ -75,14 +73,10 @@ expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \na
 expression (Apply (extract -> f) (extract -> x) _) = do
   let (g, as) = flatten f x
   g' <- expression g
-  let (Application result calls partial) = traceShowId $ groupApplication (traceShowId $ repOf g) as
-  let results = replicate (length calls - 1) fn ++ [maybe fn (const $ llvmType result) partial]
+  let (Application result calls partial) = groupApplication (IR.typeOf g) as
+  let results = replicate (length calls - 1) box ++ [maybe box (const $ llvmType result) partial]
   fullApplications <- foldlM genCall g' (zip results calls)
   maybe (pure fullApplications) (partialApplication fullApplications) partial
-
-repOf :: Comonad f => IR.Expression f -> IR.Type
-repOf (Reference _ _ ty _) = ty
-repOf expr = IR.typeOf expr
 
 genCall :: Comonad f => LLVM.Expression -> (LLVM.Type, Call (IR.Expression f)) -> LLVM LLVM.Expression
 genCall f (retType, args) = do
@@ -140,6 +134,7 @@ withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name
 
 buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
 buildClosure narity f args = do
+  comment "Build closure"
   let (boxed, unboxed, Packed unboxedTypes) = splitArgs $ map LLVM.typeOf args
   let tyClosure = closureType (length boxed) unboxedTypes
   bytes <- sizeOf size tyClosure
@@ -183,19 +178,21 @@ getApply _ returnTy tys = do
   pure $ LLVM.GlobalReference (generatedName genType) (generatedType genType)
 
 asArg :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
-asArg ty arg | ty == LLVM.typeOf arg = pure arg
-asArg ty arg | sameRepresentation ty (LLVM.typeOf arg) = bitcastAndTag arg ty
-asArg ty arg | Ptr ty == LLVM.typeOf arg = load arg
-asArg ty arg | sameRepresentation (Ptr ty) (LLVM.typeOf arg) = bitcast arg (Ptr ty) >>= load
-asArg ty arg | sameRepresentation ty (Ptr $ LLVM.typeOf arg) = do
-  bytes <- sizeOf size (LLVM.typeOf arg)
-  ptr <- heapAlloc bytes
-  box <- bitcast ptr (Ptr $ LLVM.typeOf arg)
-  store arg box
-  if LLVM.typeOf ptr == ty
-    then pure ptr
-    else bitcast box ty
-asArg ty arg = error $ "Cannot apply expression of type " ++ show (LLVM.typeOf arg) ++ " as argument of type " ++ show ty
+asArg (varType -> ty) arg = case LLVM.typeOf arg of
+  tyArg | ty == tyArg -> pure arg
+        | sameRepresentation ty tyArg -> bitcastAndTag arg ty
+        | Ptr ty == tyArg -> load arg
+        | sameRepresentation (Ptr ty) tyArg -> bitcast arg (Ptr ty) >>= load
+        | sameRepresentation ty (Ptr tyArg) -> do
+            comment "Box argument"
+            bytes <- sizeOf size tyArg
+            ptr <- heapAlloc bytes
+            box <- bitcast ptr (Ptr tyArg)
+            store arg box
+            if LLVM.typeOf ptr == ty
+              then pure ptr
+              else bitcast box ty
+        | otherwise -> error $ "Cannot apply expression of type " ++ show tyArg ++ " as argument of type " ++ show ty
 
 bitcastAndTag :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
 bitcastAndTag expr ty | ty == box = case LLVM.typeOf expr of
@@ -236,13 +233,13 @@ llvmType (CheckedType ty) = case ty of
   ADT{} -> LLVM.I 32
   IR.Function UnknownArity _ _ -> fn
   IR.Function (Arity n) (varType . llvmType -> from) (llvmType -> to) -> Ptr $ case to of
-    LLVM.Function f as -> if n == 1
+    Ptr (LLVM.Function f as) -> if n == 1
       then LLVM.Function box [from]
       else LLVM.Function f (from : as)
     f -> LLVM.Function f [from]
 
 varType :: LLVM.Type -> LLVM.Type -- TODO: repType . typeRep
-varType LLVM.Function{} = box
+varType (Ptr LLVM.Function{}) = box
 varType a = a
 
 nameOf :: (Bound f a, Comonad f) => a -> Name

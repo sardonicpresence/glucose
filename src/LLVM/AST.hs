@@ -23,6 +23,7 @@ data BasicBlock = BasicBlock (Maybe Name) [Statement] Terminator deriving (Eq)
 data Statement = Assignment Name Assignment
                | VoidCall Expression [Expression]
                | Store Expression Expression
+               | Comment String
   deriving (Eq)
 
 data Assignment = Call Expression [Expression]
@@ -88,6 +89,7 @@ instance References Statement where
   expressions f (Assignment name assignment) = Assignment name <$> expressions f assignment
   expressions f (VoidCall fn args) = VoidCall <$> f fn <*> traverse f args
   expressions f (Store from to) = Store <$> f from <*> f to
+  expressions _ (Comment s) = pure $ Comment s
 instance References Assignment where
   expressions f (Call fn args) = Call <$> f fn <*> traverse f args
   expressions f (Load ptr) = Load <$> f ptr
@@ -138,6 +140,7 @@ instance Show Statement where
   show (VoidCall f args) = show (Call f args)
   show (Assignment name assignment) = local name ++ " = " ++ show assignment
   show (Store from to) = "store " ++ withType from ++ ", " ++ withType to
+  show (Comment s) = "; " ++ s
 
 instance Show Assignment where
   show (Call f args) = "tail call " ++ show (returnType . deref $ typeOf f) ++ " " ++ show f ++ "(" ++ arguments args ++ ")"

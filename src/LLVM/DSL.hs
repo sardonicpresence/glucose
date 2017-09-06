@@ -98,6 +98,9 @@ call_ = (state .) . VoidCall
 store :: Monad m => Expression -> Expression -> LLVMT m ()
 store = (state .) . Store
 
+comment :: Monad m => String -> LLVMT m ()
+comment = state . Comment
+
 load :: Monad m => Expression -> LLVMT m Expression
 load = assignNew . Load
 
