@@ -21,20 +21,9 @@ three = \a -> 3
 id = \a -> a
 const = \ a b -> a
 
-ofType : a -> a -> a
-ofType = const
-
 test = \a -> _test
 test2 = \a -> const id a
 testא = \a b -> const const a test2 b
 test5 = \a b -> id \c -> const a c
 call5 = \f -> f test2 const test5 testא foo
 main = \a -> call5 test5
-
-eval2 = \f a b -> f a b
-
-baz = \a -> const a
-gaz = baz foo foo
-
-goo = \a -> \b c -> a
-hoo = goo foo id

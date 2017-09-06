@@ -75,10 +75,14 @@ expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \na
 expression (Apply (extract -> f) (extract -> x) _) = do
   let (g, as) = flatten f x
   g' <- expression g
-  let (Application result calls partial) = groupApplication (IR.typeOf g) as
+  let (Application result calls partial) = traceShowId $ groupApplication (traceShowId $ repOf g) as
   let results = replicate (length calls - 1) fn ++ [maybe fn (const $ llvmType result) partial]
   fullApplications <- foldlM genCall g' (zip results calls)
   maybe (pure fullApplications) (partialApplication fullApplications) partial
+
+repOf :: Comonad f => IR.Expression f -> IR.Type
+repOf (Reference _ _ ty _) = ty
+repOf expr = IR.typeOf expr
 
 genCall :: Comonad f => LLVM.Expression -> (LLVM.Type, Call (IR.Expression f)) -> LLVM LLVM.Expression
 genCall f (retType, args) = do
