@@ -1,12 +1,14 @@
 module Glucose.Codegen.LLVM.RT
 (
-  functionDeclarations, heapAlloc, heapAllocN,
+  functionDeclarations, heapAlloc, heapAllocType, heapAllocN,
   splitArgs,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
-  generateFunction, generatedName, generatedType, typeRep
+  generateFunction, generatedName, generatedType, typeRep, repType
 ) where
 
+import Control.Lens
 import Data.Foldable
+import Data.List
 import Data.Text (pack)
 import Data.Traversable
 import Glucose.Codegen.LLVM.Types
@@ -32,6 +34,12 @@ _assume = ("llvm.assume", Parameter Void False False Nothing, [I 1], FunctionAtt
 
 functionDeclarations :: [Global]
 functionDeclarations = map (uncurry4 FunctionDeclaration) [ _assume, _memcpy, _heapAlloc ]
+
+heapAllocType :: Monad m => Type -> LLVMT m Expression
+heapAllocType ty = do
+    bytes <- sizeOf size ty
+    ptr <- heapAlloc bytes
+    bitcast ptr (Ptr ty)
 
 heapAlloc :: Monad m => Expression -> LLVMT m Expression
 heapAlloc bytes = do
@@ -73,10 +81,9 @@ callFn_ :: Monad m => (Name, Parameter Type, [Type], FunctionAttributes) -> [Exp
 callFn_ (name, result, args, _) = call_ $ GlobalReference name . Ptr $ Function (parameter result) args
 
 splitArgs :: [Type] -> ([Int], [Int], Type)
-splitArgs tys = (fst boxed, fst unboxed, Packed $ snd unboxed) where
-  indexed = zip [0..] tys :: [(Int,Type)]
-  boxed = unzip $ filter (isBoxed . snd) indexed
-  unboxed = unzip $ filter (not . isBoxed . snd) indexed
+splitArgs types = (boxed, fst unboxed, Packed $ snd unboxed) where
+  boxed = findIndices isBoxed types
+  unboxed = unzip $ itoListOf (folded . filtered (not . isBoxed)) types
   isBoxed = (BoxRep ==) . typeRep
 
 
