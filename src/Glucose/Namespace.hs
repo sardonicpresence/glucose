@@ -17,10 +17,10 @@ import Glucose.Identifier
 type Arg = IR.Arg IR.Checking
 type Definition = IR.Definition IR.Checked
 
-data Variable f = Arg (f Arg) | Definition (f (Definition f))
+data Variable f = Arg Int (f Arg) | Definition (f (Definition f))
 
 instance Comonad f => Bound f (Variable f) where
-  identifier (Arg arg) = identifier arg
+  identifier (Arg _ arg) = identifier arg
   identifier (Definition def) = identifier $ extract def
 
 newtype Scope f = Scope (Map Identifier (Variable f))
@@ -28,7 +28,7 @@ newtype Scope f = Scope (Map Identifier (Variable f))
 newtype Namespace f = Namespace [Scope f]
 
 declaredArgs :: Traversal' (Namespace f) (f Arg)
-declaredArgs f (Namespace scopes) = Namespace <$> traverse (\(Scope s) -> Scope <$> traverse (\case Arg a -> Arg <$> f a; a -> pure a) s) scopes
+declaredArgs f (Namespace scopes) = Namespace <$> traverse (\(Scope s) -> Scope <$> traverse (\case Arg i a -> Arg i <$> f a; a -> pure a) s) scopes
 
 data ScopeLevel = TopLevel | CurrentScope | ParentScope
 
@@ -51,8 +51,8 @@ declare var ns = case lookupVariable (identify var) ns of
     declareUnsafe var (Namespace []) = Namespace [Scope $ Map.insert (identify var) var Map.empty]
     declareUnsafe var (Namespace (Scope s : ss)) = Namespace $ (Scope $ Map.insert (identify var) var s) : ss
 
-declareArg :: Comonad f => f Arg -> Namespace f -> Either (Variable f) (Namespace f)
-declareArg = declare . Arg
+declareArg :: Comonad f => Int -> f Arg -> Namespace f -> Either (Variable f) (Namespace f)
+declareArg = (declare .) . Arg
 
 declareDefinition :: Comonad f => f (Definition f) -> Namespace f -> Either (Variable f) (Namespace f)
 declareDefinition = declare . Definition

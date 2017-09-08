@@ -11,6 +11,7 @@ import Data.List as List
 import Data.Map.Strict as Map hiding (mapMaybe)
 import Data.Map.Utils as Map
 import Data.Maybe
+import Data.Ord (comparing)
 import Data.Set as Set
 import Data.Traversable
 
@@ -100,14 +101,15 @@ checked name = do
 
 pushArgs :: [f (Arg Checking)] -> TypeCheck f m ()
 pushArgs args = modifyingM namespace $ \ns ->
-  foldM (flip $ handlingDuplicates declareArg) (pushScope ns) args
+  ifoldlM (flip . handlingDuplicates . declareArg) (pushScope ns) args
 
 popArgs :: TypeCheck f m [f (Arg Checking)]
 popArgs = do
   ns <- use namespace
   let (vars, ns') = popScope ns
   namespace .= ns'
-  pure $ mapMaybe (\case NS.Arg arg -> Just arg; _ -> Nothing) vars
+  let args = mapMaybe (\case NS.Arg i arg -> Just (i, arg); _ -> Nothing) vars
+  pure . List.map snd $ sortBy (comparing fst) args
 
 define :: Identifier -> f (Definition Checked f) -> TypeCheck f m (f (Definition Checked f))
 define name value = do
@@ -127,7 +129,7 @@ newVar = nextVar %%= genVar
 
 referenceVariable :: Variable f -> TypeCheck f m (Expression Checking f)
 referenceVariable (NS.Definition def) = referenceTo $ extract def
-referenceVariable (NS.Arg arg) = pure . referenceArg $ extract arg
+referenceVariable (NS.Arg _ arg) = pure . referenceArg $ extract arg
 
 referenceTo :: Definition Checked f -> TypeCheck f m (Expression Checking f)
 referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def) (typeOf def)
