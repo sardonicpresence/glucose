@@ -113,7 +113,7 @@ instance Show Global where
   show (VariableDefinition name linkage value) =
     global name ++ " =" ++ withSpace linkage ++ " unnamed_addr constant " ++ withType value ++ ", " ++ alignment ++ "\n"
   show (Alias to from ty) =
-    global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show ty ++ "* " ++ show from ++ "\n"
+    global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show (Ptr ty) ++ " " ++ show from ++ "\n"
   show (FunctionDefinition name linkage args blocks) =
     "define" ++ withSpace linkage ++ " " ++ show (defReturnType blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
               ++ " {\n" ++ concatMap show blocks ++ "}\n"

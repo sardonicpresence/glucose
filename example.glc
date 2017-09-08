@@ -3,7 +3,7 @@ _test = 54.321e02
 
 foo
  =
-  1e3
+  1.23e2
 That = that
 
 type
@@ -29,12 +29,8 @@ test2 = \a -> const id a
 testא = \a b -> const const a test2 b
 test5 = \a b -> id \c -> const a c
 call5 = \f -> f test2 const test5 testא foo
-main = \a -> call5 test5
+main = \a -> test5 test2 const test5 testא foo
 
 eval2 = \f a b -> f a b
 
-baz = \a -> const a
-gaz = baz foo foo
-
 goo = \a -> \b c -> a
-hoo = goo foo id

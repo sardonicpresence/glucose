@@ -57,7 +57,9 @@ amble = typeDeclarations ++ functionDeclarations
 definition :: Comonad f => Definition f -> LLVMT Codegen ()
 definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
-    Reference Global to ty -> alias name (GlobalReference (nameOf to) $ llvmType ty) (llvmType ty)
+    Reference Global to (llvmType -> ty) -> do
+      let tyPtr = case ty of Ptr t -> t; _ -> ty
+      alias name (GlobalReference (nameOf to) tyPtr) tyPtr
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
       void $ defineFunction name External llvmArgs (ret =<< expression (extract expr))
@@ -95,8 +97,11 @@ fullApplication f retType args = do
   let prepareArg (ty, arg) = coerce (llvmType ty) =<< expression arg
   preparedArgs <- traverse prepareArg args
   case LLVM.typeOf f of
-    Ptr LLVM.Function{} -> LLVM.call f preparedArgs
+    Ptr LLVM.Function{} -> do
+      comment $ "Call function " ++ show f ++ " of known arity " ++ show (length args)
+      LLVM.call f preparedArgs
     _ -> do
+      comment $ "Call unknown function " ++ show f
       let argTypes = map (llvmType . fst) args
       fnApply <- getApply ApplyUnknown retType argTypes
       result <- LLVM.call fnApply $ preparedArgs ++ [bitcastFunctionRef f]
@@ -140,9 +145,9 @@ defineSlowWrapper _ = error "Can only define wrappers for global functions!"
 
 buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
 buildClosure narity f args = do
-  comment "Build closure"
   let (boxed, unboxed, Packed unboxedTypes) = splitArgs $ map LLVM.typeOf args
   let tyClosure = closureType (length boxed) unboxedTypes
+  comment $ "Build closure with arity " ++ show narity ++ " applying " ++ show (length unboxed) ++ " unboxed and " ++ show (length boxed) ++ " boxed arguments to " ++ show f
   pclosure <- heapAllocType tyClosure
   rfn <- bitcast f (Ptr fn)
   -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
@@ -170,7 +175,7 @@ coerce (valueType -> ty) arg = case LLVM.typeOf arg of
 
 boxValue :: LLVM.Expression -> LLVM LLVM.Expression
 boxValue expr = do
-  comment "Box value"
+  comment $ "Box " ++ show expr
   let ty = LLVM.typeOf expr
   box <- heapAllocType ty
   store expr box
@@ -178,7 +183,9 @@ boxValue expr = do
 
 bitcastAndTag :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
 bitcastAndTag expr ty | ty == box = case LLVM.typeOf expr of
-  Ptr (LLVM.Function _ args) -> buildClosure (length args) expr []
+  Ptr (LLVM.Function _ args) -> if length args < 16
+    then tagged expr (length args) ty
+    else buildClosure (length args) expr []
   _ -> bitcast expr ty
 bitcastAndTag expr ty = bitcast expr ty
 
@@ -193,7 +200,7 @@ llvmType (Type (Checked ty)) = case ty of
   Boxed{} -> box
   Polymorphic{} -> box
   ADT{} -> LLVM.I 32
-  IR.Function UnknownArity _ _ -> fn
+  IR.Function UnknownArity _ _ -> box
   IR.Function (Arity n) (valueType . llvmType -> from) (llvmType -> to) -> Ptr $ case to of
     Ptr (LLVM.Function f as) -> if n == 1
       then LLVM.Function box [from]

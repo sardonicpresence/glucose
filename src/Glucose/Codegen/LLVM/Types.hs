@@ -1,5 +1,6 @@
 module Glucose.Codegen.LLVM.Types
 (
+  Representation(..), typeRep, repType, functionType,
   tagMask, untagMask, argAlign,
   boxed, box, fn, size, arity, argsize, closure,
   closureType, rtName, typeDeclarations
@@ -10,6 +11,27 @@ import Data.Monoid
 import Data.Text (Text)
 import LLVM.AST
 import LLVM.Name
+
+-- * Representations
+
+data Representation = I32Rep | F64Rep | BoxRep
+  deriving (Eq, Ord)
+
+typeRep :: Type -> Representation
+typeRep (I n) | n <= 32 = I32Rep
+typeRep (I n) = error $ show n ++ "-bit integers are not supported!"
+typeRep F64 = F64Rep
+typeRep _ = BoxRep
+
+repType :: Representation -> Type
+repType I32Rep = I 32
+repType F64Rep = F64
+repType BoxRep = box
+
+functionType :: Representation -> [Representation] -> Type
+functionType result args = Ptr $ Function (repType result) (map repType args)
+
+
 
 tagMask :: Expression
 tagMask = Literal $ IntegerLiteral (Just $ rtTypeName Size) 64 0xF

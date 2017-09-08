@@ -1,9 +1,9 @@
 module Glucose.Codegen.LLVM.RT
 (
   functionDeclarations, heapAlloc, heapAllocType, heapAllocN,
-  splitArgs,
+  splitArgs, tagged,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
-  generateFunction, generatedName, generatedType, typeRep, repType
+  generateFunction, generatedName, generatedType,
 ) where
 
 import Control.Lens
@@ -98,28 +98,6 @@ data ApplyFn = ApplyFn ApplyType Representation [Representation]
 data ApplyType = ApplyUnknown | ApplySlow
   deriving (Eq, Ord)
 
-data Representation = I32Rep | F64Rep | BoxRep
-  deriving (Eq, Ord)
-
-typeRep :: Type -> Representation
-typeRep (I n) | n <= 32 = I32Rep
-typeRep (I n) = error $ show n ++ "-bit integers are not supported!"
-typeRep F64 = F64Rep
-typeRep _ = BoxRep
-
-repType :: Representation -> Type
-repType I32Rep = I 32
-repType F64Rep = F64
-repType BoxRep = box
-
-repSize :: Representation -> Int
-repSize I32Rep = 32
-repSize F64Rep = 64
-repSize BoxRep = 64 -- TODO
-
-functionType :: Representation -> [Representation] -> Type
-functionType result args = Ptr $ Function (repType result) (map repType args)
-
 argNames :: [Name]
 argNames = map Name variables
 
@@ -137,11 +115,20 @@ generatedName (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) =
 generatedName (GeneratedApply (ApplyFn ApplySlow resultType argTypes)) =
   rtName . pack $ "slow" ++ map repCode (resultType : argTypes)
 
-untag :: Monad m => Expression -> Type -> LLVMT m Expression
-untag p ty = do
-  bits <- ptrtoint p size
-  untagged <- andOp bits untagMask
-  inttoptr untagged ty
+tagged :: Monad m => Expression -> Int -> Type -> LLVMT m Expression
+tagged p tag ty | tag > 0 && tag < 16 = do
+  comment $ "Tag " ++ show p ++ " with " ++ show tag
+  pInt <- ptrtoint p size
+  tagged <- orOp pInt (integer size tag)
+  inttoptr tagged ty
+tagged _ tag _ = error $ "Cannot tag a pointer with the value " ++ show tag
+
+untag :: Monad m => Expression -> LLVMT m (Expression, Expression)
+untag p = do
+  pInt <- ptrtoint p size
+  untagged <- andOp pInt untagMask
+  tag <- trunc pInt (I 4)
+  pure (tag, untagged)
 
 generatedType :: GeneratedFn -> Type
 generatedType (GeneratedApply (ApplyFn ApplySlow resultType _)) = functionType resultType [BoxRep, BoxRep]
@@ -154,7 +141,8 @@ generateFunction = evalLLVM . \case
     let fn = Arg "fn" box
         args = Arg "args" (Ptr box)
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR [args, fn] $ do
-          fp <- untag (argReference fn) $ functionType resultType argTypes
+          untagged <- snd <$> untag (argReference fn)
+          fp <- inttoptr untagged $ functionType resultType argTypes
           args <- for [0..length argTypes-1] $ \i -> do
             let argType = argTypes !! i
             parg <- flip bitcast (Ptr $ repType argType) =<< getelementptr (argReference args) [i64 i]
@@ -165,25 +153,23 @@ generateFunction = evalLLVM . \case
         args = generatedArgs argTypes
         (boxed, unboxed, argsType) = splitArgs $ map repType argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) $ do
-          toMask <- ptrtoint (argReference fn) size
-          -- tag <- andOp toMask tagMask
-          -- isTrivial <- icmp Eq tag (integer size $ length args)
-          -- br isTrivial "Trivial" "Nontrivial"
+          (tag, untagged) <- untag (argReference fn)
+          isTrivial <- icmp Eq tag (integer (I 4) $ length args)
+          br isTrivial "Trivial" "Nontrivial"
 
-          -- label "Trivial"
-          -- fp <- flip inttoptr (functionType resultType argTypes) =<< andOp toMask untagMask
-          -- jump "Fast"
+          label "Trivial"
+          fp <- inttoptr untagged $ functionType resultType argTypes
+          jump "Fast"
 
-          -- label "Nontrivial"
-          -- isClosure <- icmp Eq tag $ integer size 0
-          -- br isClosure "Closure" "Function"
+          label "Nontrivial"
+          isClosure <- icmp Eq tag $ integer size 0
+          br isClosure "Closure" "Function"
 
-          -- label "Function"
-          -- ret $ undef (repType resultType) -- TODO
+          label "Function"
+          ret $ undef (repType resultType) -- TODO
 
-          -- label "Closure"
-          -- Tag bits were 0 so no need to mask
-          pclosure <- bitcast (argReference fn) (Ptr closure)
+          label "Closure"
+          pclosure <- inttoptr untagged (Ptr closure) -- TODO: any better to cast from fn direct?
           pfn <- load =<< getelementptr pclosure [i64 0, i32 0]
           nunbound <- load =<< getelementptr pclosure [i64 0, i32 1]
           nboxed <- load =<< getelementptr pclosure [i64 0, i32 2]
@@ -198,9 +184,9 @@ generateFunction = evalLLVM . \case
           label "Raw"
           raw <- bitcast pfn (functionType resultType argTypes)
 
-          -- label_ "Fast"
-          -- pfast <- phi [(fp, "Trivial"), (raw, "Raw")]
-          ret =<< call raw (map argReference args)
+          label_ "Fast"
+          pfast <- phi [(fp, "Trivial"), (raw, "Raw")]
+          ret =<< call pfast (map argReference args)
 
           label "Partial"
           -- ntotal <- flip zext (I 64) =<< addOp napplied (integer arity $ length args)
