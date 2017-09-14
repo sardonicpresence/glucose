@@ -27,13 +27,11 @@ target triple = "x86_64-pc-windows"
 declare dllimport i8* @VirtualAlloc(i8*, i64, i32, i32)
 declare dllimport void @ExitProcess(i32) nounwind ; noreturn produces less minimal instructions in _start
 
-declare %$box @main(%$box) unnamed_addr nounwind
+declare i32 @main(%$box) unnamed_addr nounwind
 
 define void @_start() unnamed_addr norecurse noreturn nounwind {
-  %1 = call %$box @main(%$box null)
-  %2 = bitcast %$box %1 to i32*
-  %3 = load i32, i32* %2
-  tail call void @ExitProcess(i32 %3)
+  %1 = call i32 @main(%$box null)
+  tail call void @ExitProcess(i32 %1)
   ret void
 }
 

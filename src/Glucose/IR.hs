@@ -5,7 +5,7 @@ module Glucose.IR
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
   pattern BoundType, pattern FreeType, pattern CheckedType,
-  dataType, typeVariables, free, uncheck, bind, types, bindings, boxed,
+  dataType, typeVariables, free, uncheck, bind, types, bindings, boxed, unboxed,
   Typed(..), typeAnnotations, replaceType, argType
 )
 where
@@ -163,6 +163,10 @@ boxed :: DataType ty -> DataType ty
 boxed (Unboxed ty) = Boxed ty
 boxed a = a
 
+unboxed :: DataType ty -> DataType ty
+unboxed (Boxed ty) = Unboxed ty
+unboxed a = a
+
 
 -- * Show instances
 
@@ -217,7 +221,7 @@ instance (Comonad f, Annotations ann) => Typed ann (Expression ann f) where
   typeOf (Literal (FloatLiteral _)) = dataType # Unboxed Float
   typeOf (Reference _ _ ty) = ty
   typeOf (Lambda args expr) = go (length args) args where
-    go _ [] = typeOf $ extract expr
+    go _ [] = typeOf (extract expr) & dataType %~ unboxed
     go m (a:as) = dataType # Function (Arity m) (typeOf $ extract a) (go (m-1) as)
   typeOf (Apply _ _ ty) = ty
 

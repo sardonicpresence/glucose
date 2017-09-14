@@ -69,7 +69,7 @@ typeCheckExpression expr = for expr $ \case
     maybe (typeCheckIdentifier $ identifier <$ expr) referenceVariable referenced
   Lambda args def -> do
     pushArgs =<< traverse (traverse typeCheckArg) args
-    typeCheckedExpr <- typeCheckExpression def
+    typeCheckedExpr <- unboxReturnType <$> typeCheckExpression def
     typeCheckedArgs <- popArgs
     pure $ Lambda typeCheckedArgs typeCheckedExpr
   Apply expr arg ty -> do
@@ -79,6 +79,11 @@ typeCheckExpression expr = for expr $ \case
     unifier <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
     namespace . declaredArgs . traversed . argType %= unifier
     pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
+
+unboxReturnType :: Functor f => f (Expression Checking f) -> f (Expression Checking f)
+unboxReturnType = fmap $ \case
+  Apply f as ty -> Apply f as (ty & dataType %~ unboxed)
+  e -> e
 
 functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
 functionReturning returnType argType = dataType # Function UnknownArity argType returnType
@@ -108,7 +113,8 @@ popArgs = do
   ns <- use namespace
   let (vars, ns') = popScope ns
   namespace .= ns'
-  let args = mapMaybe (\case NS.Arg i arg -> Just (i, arg); _ -> Nothing) vars
+  let unboxArg (Arg name ty) = Arg name $ ty & dataType %~ unboxed
+  let args = mapMaybe (\case NS.Arg i arg -> Just (i, unboxArg <$> arg); _ -> Nothing) vars
   pure . List.map snd $ sortBy (comparing fst) args
 
 define :: Identifier -> f (Definition Checked f) -> TypeCheck f m (f (Definition Checked f))

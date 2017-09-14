@@ -10,7 +10,7 @@ import Control.Monad.Identity
 import Control.Monad.State hiding (state)
 import Data.Maybe
 
--- * Monad transformer
+-- * LLVMT monad transformer
 
 data DSL = DSL { _globals :: [Global]
                , _blocks :: [BasicBlock]
@@ -22,19 +22,11 @@ makeLenses ''DSL
 
 type LLVMT m a = StateT DSL m a
 
-type LLVM a = LLVMT Identity a
-
-runLLVM :: LLVM a -> (a, DSL)
-runLLVM = runIdentity . runLLVMT
-
 runLLVMT :: LLVMT m a -> m (a, DSL)
 runLLVMT m = runStateT m $ DSL [] [] Nothing [] 0
 
 evalLLVMT :: Monad m => LLVMT m a -> m a
 evalLLVMT = fmap fst . runLLVMT
-
-evalLLVM :: LLVM a -> a
-evalLLVM = fst . runLLVM
 
 execLLVMT :: Monad m => LLVMT m () -> m [Global]
 execLLVMT m = do
@@ -44,6 +36,16 @@ execLLVMT m = do
 
 mapLLVMT :: (m (a, DSL) -> n (b, DSL)) -> LLVMT m a -> LLVMT n b
 mapLLVMT = mapStateT
+
+-- * LLVM monad
+
+type LLVM a = LLVMT Identity a
+
+runLLVM :: LLVM a -> (a, DSL)
+runLLVM = runIdentity . runLLVMT
+
+evalLLVM :: LLVM a -> a
+evalLLVM = fst . runLLVM
 
 -- * Declarations/definitions
 
@@ -104,54 +106,33 @@ comment = state . Comment
 load :: Monad m => Expression -> LLVMT m Expression
 load = assignNew . Load
 
-bitcast :: Monad m => Expression -> Type -> LLVMT m Expression
-bitcast = convert Bitcast
-
 getelementptr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
 getelementptr = (assignNew .) . GEP
 
-ptrtoint :: Monad m => Expression -> Type -> LLVMT m Expression
+bitcast, ptrtoint, inttoptr, trunc, zext :: Monad m => Expression -> Type -> LLVMT m Expression
+bitcast = convert Bitcast
 ptrtoint = convert PtrToInt
-
-inttoptr :: Monad m => Expression -> Type -> LLVMT m Expression
 inttoptr = convert IntToPtr
-
-trunc :: Monad m => Expression -> Type -> LLVMT m Expression
 trunc = convert Trunc
-
-zext :: Monad m => Expression -> Type -> LLVMT m Expression
 zext = convert Zext
 
 convert :: Monad m => ConversionOp -> Expression -> Type -> LLVMT m Expression
 convert _ a ty | typeOf a == ty = pure a
-convert _ a (Custom _ ty) | typeOf a == ty = pure a
 convert op a ty = assignNew $ Convert op a ty
 
 alloca :: Monad m => Type -> Expression -> LLVMT m Expression
 alloca = (assignNew .) . Alloca
 
-andOp :: Monad m => Expression -> Expression -> LLVMT m Expression
+andOp, orOp, xorOp, addOp, subOp, mulOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 andOp = binaryOp And
-
-orOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 orOp = binaryOp Or
-
-xorOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 xorOp = binaryOp Xor
-
-addOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 addOp = binaryOp Add
-
-subOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 subOp = binaryOp Sub
-
-mulOp :: Monad m => Expression -> Expression -> LLVMT m Expression
 mulOp = binaryOp Mul
 
-inc :: Monad m => Expression -> LLVMT m Expression
+inc, dec :: Monad m => Expression -> LLVMT m Expression
 inc a = addOp a $ integer (typeOf a) 1
-
-dec :: Monad m => Expression -> LLVMT m Expression
 dec a = subOp a $ integer (typeOf a) 1
 
 icmp :: Monad m => Comparison -> Expression -> Expression -> LLVMT m Expression

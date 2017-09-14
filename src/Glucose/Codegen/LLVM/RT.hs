@@ -127,7 +127,8 @@ untag :: Monad m => Expression -> LLVMT m (Expression, Expression)
 untag p = do
   pInt <- ptrtoint p size
   untagged <- andOp pInt untagMask
-  tag <- trunc pInt (I 4)
+  tag <- andOp pInt (integer size 15)
+  -- tag <- trunc pInt (I 4)
   pure (tag, untagged)
 
 generatedType :: GeneratedFn -> Type
@@ -154,7 +155,7 @@ generateFunction = evalLLVM . \case
         (boxed, unboxed, argsType) = splitArgs $ map repType argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) $ do
           (tag, untagged) <- untag (argReference fn)
-          isTrivial <- icmp Eq tag (integer (I 4) $ length args)
+          isTrivial <- icmp Eq tag (integer size $ length args)
           br isTrivial "Trivial" "Nontrivial"
 
           label "Trivial"

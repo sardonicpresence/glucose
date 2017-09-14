@@ -75,13 +75,13 @@ expression (Reference Global (nameOf -> name) ty) = case ty of
   _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
 expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \name ->
   buildLambda name Private args def
-expression (Apply (extract -> f) (extract -> x) _) = do
+expression (Apply (extract -> f) (extract -> x) returnTy) = do
   let (root, args) = flatten f x
   let (Application result calls partial) = groupApplication (IR.typeOf root) args
   let returnTypes = replicate (length calls - 1) box ++ [maybe box (const $ llvmType result) partial]
   root' <- expression root
   fullApplications <- foldlM (uncurry . fullApplication) root' $ zip returnTypes calls
-  maybe (pure fullApplications) (partialApplication fullApplications) partial
+  coerce (llvmType returnTy) =<< maybe (pure fullApplications) (partialApplication fullApplications) partial
 
 argument :: IR.Arg -> LLVM.Arg
 argument (IR.Arg name ty) = LLVM.Arg (nameOf name) (llvmType ty)
