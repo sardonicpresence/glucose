@@ -1,4 +1,4 @@
-module Glucose.Codegen.LLVM (codegen, codegenModuleDefinitions, codegenModule, codegenDefinitions, win64, llvmType) where
+module Glucose.Codegen.LLVM (codegen, codegenModuleDefinitions, codegenModule, codegenDefinitions, llvmType) where
 
 import Glucose.Codegen.LLVM.NameGen
 import Glucose.Codegen.LLVM.RT
@@ -16,27 +16,25 @@ import Data.Text (Text, pack)
 import Data.Traversable
 import Glucose.Identifier
 import Glucose.IR.Checked as IR
-import LLVM.AST as LLVM
+import Glucose.Codegen.Target
+import LLVM.AST as LLVM hiding (Target)
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
 
-win64 :: Target
-win64 = Target (DataLayout LittleEndian Windows [(LLVM.I 64, 64, Nothing)] [8,16,32,64] (Just 128))
-               (Triple "x86_64" "pc" "windows")
-
 -- * Compiler interface
 
-codegen :: Comonad f => IR.Module f -> Text
-codegen = pack . show . codegenModule
+codegen :: Comonad f => Target -> IR.Module f -> Text
+codegen target = pack . show . codegenModule target
 
 codegenModuleDefinitions :: Comonad f => IR.Module f -> Text
 codegenModuleDefinitions (IR.Module defs) = pack . concatMap show . codegenDefinitions $ map extract defs
 
 -- * Test interface
 
-codegenModule :: Comonad f => IR.Module f -> LLVM.Module
-codegenModule (IR.Module []) = LLVM.Module win64 []
-codegenModule (IR.Module defs) = LLVM.Module win64 $ amble ++ codegenDefinitions (map extract defs)
+codegenModule :: Comonad f => Target -> IR.Module f -> LLVM.Module
+codegenModule (llvmTarget -> target) = \case
+  IR.Module [] -> LLVM.Module target []
+  IR.Module defs -> LLVM.Module target $ amble ++ codegenDefinitions (map extract defs)
 
 codegenDefinitions :: Comonad f => [IR.Definition f] -> [LLVM.Global]
 codegenDefinitions = runCodegen . execLLVMT . mapM_ definition

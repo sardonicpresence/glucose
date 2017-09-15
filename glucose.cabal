@@ -43,6 +43,7 @@ library
                      , Glucose.Codegen.LLVM.NameGen
                      , Glucose.Codegen.LLVM.RT
                      , Glucose.Codegen.LLVM.Types
+                     , Glucose.Codegen.Target
                      , Glucose.Error
                      , Glucose.Identifier
                      , Glucose.IR

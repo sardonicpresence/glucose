@@ -18,6 +18,6 @@ logErrors :: ExceptT String IO () -> IO ()
 logErrors = either (hPutStr stderr) pure <=< runExceptT
 
 extension :: CompilerOutput -> String
-extension LLVM = "ll"
+extension LLVM{} = "ll"
 extension JavaScript = "js"
 extension IR = ""
