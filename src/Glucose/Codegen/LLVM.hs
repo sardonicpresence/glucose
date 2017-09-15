@@ -5,6 +5,7 @@ import Glucose.Codegen.LLVM.RT
 import Glucose.Codegen.LLVM.Types
 
 import Control.Comonad
+import Control.Lens.Operators
 import Control.Monad.Trans (lift)
 import Control.Monad.Writer
 import Data.Foldable
@@ -62,7 +63,8 @@ definition (Definition (nameOf -> name) def) =
       alias name (GlobalReference (nameOf to) tyPtr) tyPtr
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
-      void $ defineFunction name External llvmArgs (ret =<< expression (extract expr))
+      let retTy = llvmType $ IR.typeOf (extract expr) & dataType %~ unboxed
+      void $ defineFunction name External llvmArgs (ret =<< coerce retTy =<< expression (extract expr))
     _ -> void $ defineVariable name External $ expression (extract def)
 definition (Constructor (nameOf -> name) _ index) =
   void $ defineVariable name External (pure $ i32 index)
@@ -75,13 +77,13 @@ expression (Reference Global (nameOf -> name) ty) = case ty of
   _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
 expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \name ->
   buildLambda name Private args def
-expression (Apply (extract -> f) (extract -> x) returnTy) = do
+expression (Apply (extract -> f) (extract -> x) retTy) = do
   let (root, args) = flatten f x
   let (Application result calls partial) = groupApplication (IR.typeOf root) args
   let returnTypes = replicate (length calls - 1) box ++ [maybe box (const $ llvmType result) partial]
   root' <- expression root
   fullApplications <- foldlM (uncurry . fullApplication) root' $ zip returnTypes calls
-  coerce (llvmType returnTy) =<< maybe (pure fullApplications) (partialApplication fullApplications) partial
+  coerce (llvmType retTy) =<< maybe (pure fullApplications) (partialApplication fullApplications) partial
 
 argument :: IR.Arg -> LLVM.Arg
 argument (IR.Arg name ty) = LLVM.Arg (nameOf name) (llvmType ty)
