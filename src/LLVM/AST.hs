@@ -1,5 +1,6 @@
 module LLVM.AST where
 
+import Control.Comonad
 import Control.Lens
 import Data.List
 import Data.Maybe
@@ -7,16 +8,21 @@ import LLVM.Name
 
 data Module = Module Target [Global] deriving (Eq)
 
-data Global = VariableDefinition Name Linkage Expression
-            | Alias Name Expression Type
-            | FunctionDefinition Name Linkage [Arg] [BasicBlock]
+-- TODO: split things without types e.g. TypeDef & AttributeGroup into different type
+data Global = VariableDefinition Name Linkage UnnamedAddr Expression Alignment
+            | Alias Name Linkage UnnamedAddr Expression Type
+            | FunctionDefinition Name Linkage [Parameter Arg] FunctionAttributes (Parameter [BasicBlock])
             | TypeDef Name Type
-            | FunctionDeclaration Name (Parameter Type) [Type] FunctionAttributes
+            | FunctionDeclaration Name Linkage (Parameter Type) [Parameter Type] FunctionAttributes
+            | AttributeGroup Int [String]
   deriving (Eq)
 
-data Parameter a = Parameter { parameter :: a, nonnull, noalias :: Bool, align :: Maybe Int } deriving (Eq)
+data Parameter a = Parameter [String] Alignment a deriving (Eq, Functor)
 
-newtype FunctionAttributes = FunctionAttributes { allocsize :: Maybe Int } deriving (Eq)
+data FunctionAttributes = FunctionAttributes UnnamedAddr [String] [Int] Alignment deriving (Eq)
+
+noAttributes :: UnnamedAddr -> FunctionAttributes
+noAttributes addr = FunctionAttributes addr [] [] (Alignment 0)
 
 data BasicBlock = BasicBlock (Maybe Name) [Statement] Terminator deriving (Eq)
 
@@ -62,6 +68,10 @@ data Type = Void | I Int | F64 | Ptr Type | Function Type [Type] | Custom Name T
   deriving (Eq)
 
 data Linkage = External | Private | LinkOnceODR deriving (Eq)
+
+data UnnamedAddr = Named | Unnamed | LocalUnnamed deriving (Eq)
+
+newtype Alignment = Alignment Int deriving (Eq) -- 0 indicates no alignment
 
 data ConversionOp = Bitcast | PtrToInt | IntToPtr | Trunc | Zext deriving (Eq)
 
@@ -110,26 +120,29 @@ instance Show Module where
     go (a:b:gs) = show a ++ "\n" ++ go (b:gs)
 
 instance Show Global where
-  show (VariableDefinition name linkage value) =
-    global name ++ " =" ++ withSpace linkage ++ " unnamed_addr constant " ++ withType value ++ ", " ++ alignment ++ "\n"
-  show (Alias to from ty) =
-    global to ++ " = unnamed_addr alias " ++ show ty ++ ", " ++ show (Ptr ty) ++ " " ++ show from ++ "\n"
-  show (FunctionDefinition name linkage args blocks) =
-    "define" ++ withSpace linkage ++ " " ++ show (defReturnType blocks) ++ " " ++ global name ++ "(" ++ arguments args ++ ") " ++ functionAttributes
-              ++ " {\n" ++ concatMap show blocks ++ "}\n"
+  show (VariableDefinition name linkage addr value alignment) =
+    global name ++ " =" ++ withSpace linkage ++ withSpace addr
+                ++ " constant " ++ withType value ++ withComma alignment ++ "\n"
+  show (Alias to linkage addr from ty) =
+    global to ++ " =" ++ withSpace linkage ++ withSpace addr
+              ++ " alias " ++ show ty ++ ", " ++ show (Ptr ty) ++ " " ++ show from ++ "\n"
+  show (FunctionDefinition name linkage args attrs blocks) =
+    "define" ++ withSpace linkage ++ " " ++ show (defReturnType <$> blocks) ++ " "
+             ++ global name ++ "(" ++ arguments args ++ ")" ++ withSpace attrs
+             ++ " {\n" ++ concatMap show (extract blocks) ++ "}\n"
   show (TypeDef name ty) = local name ++ " = type " ++ show ty ++ "\n"
-  show (FunctionDeclaration name result args attrs) =
-    "declare " ++ show result ++ " " ++ global name ++ "(" ++ intercalate ", " (map show args) ++ ") " ++ functionAttributes ++ withSpace attrs ++ " \n"
+  show (FunctionDeclaration name linkage result args attrs) =
+    "declare" ++ withSpace linkage ++ withSpace result ++ " "
+              ++ global name ++ "(" ++ intercalate ", " (map show args) ++ ")" ++ withSpace attrs ++ " \n"
+  show (AttributeGroup n attrs) =
+    "attributes #" ++ show n ++ " = { " ++ unwords attrs ++ " }"
 
 instance Show a => Show (Parameter a) where
-  show a =
-    (if nonnull a then "nonnull " else "") ++
-    (if noalias a then "noalias " else "") ++
-    maybe "" (\a -> "align " ++ show a ++ " ") (align a) ++
-    show (parameter a)
+  show (Parameter attrs alignment a) = concatMap (++ " ") attrs ++ withSpaceAfter alignment ++ show a
 
 instance Show FunctionAttributes where
-  show a = maybe "" (\n -> "allocsize(" ++ show n ++ ")") $ allocsize a
+  show (FunctionAttributes addr attrs groups alignment) =
+    show addr ++ concatMap (" " ++) attrs ++ concatMap ((" #" ++) . show) groups ++ withSpace alignment
 
 instance Show BasicBlock where
   show (BasicBlock label statements terminator) =
@@ -192,6 +205,15 @@ instance Show Linkage where
   show Private = "private"
   show LinkOnceODR = "linkonce_odr"
 
+instance Show UnnamedAddr where
+  show Named = ""
+  show Unnamed = "unnamed_addr"
+  show LocalUnnamed = "local_unnamed_addr"
+
+instance Show Alignment where
+  show (Alignment 0) = ""
+  show (Alignment n) = "align " ++ show n
+
 instance Show Arg where
   show (Arg name _) = local name
 
@@ -246,14 +268,20 @@ global name = "@" ++ show name
 arguments :: (Typed a, Show a) => [a] -> String
 arguments = intercalate ", " . map withType
 
-functionAttributes :: String
-functionAttributes = "unnamed_addr " ++ alignment ++ " nounwind" -- ++ " alwaysinline" -- TODO
-
-alignment :: String
-alignment = "align 16"
-
 withSpace :: Show a => a -> String
-withSpace a = if null (show a) then "" else " " ++ show a
+withSpace = withPrefix " "
+
+withSpaceAfter :: Show a => a -> String
+withSpaceAfter = withSuffix " "
+
+withComma :: Show a => a -> String
+withComma = withPrefix ", "
+
+withPrefix :: Show a => String -> a -> String
+withPrefix prefix a = if null (show a) then "" else prefix ++ show a
+
+withSuffix :: Show a => String -> a -> String
+withSuffix suffix a = if null (show a) then "" else show a ++ suffix
 
 
 -- * Typed instances
@@ -265,14 +293,15 @@ instance Typed Type where
   typeOf = id
 
 instance Typed Global where
-  typeOf (VariableDefinition _ _ expr) = typeOf expr
-  typeOf (Alias _ _ ty) = Ptr ty
-  typeOf (FunctionDefinition _ _ args blocks) = Ptr $ Function (defReturnType blocks) $ map typeOf args
+  typeOf (VariableDefinition _ _ _ expr _) = typeOf expr
+  typeOf (Alias _ _ _ _ ty) = Ptr ty
+  typeOf (FunctionDefinition _ _ args _ blocks) = Ptr $ Function (defReturnType $ extract blocks) $ map typeOf args
   typeOf TypeDef{} = undefined
-  typeOf (FunctionDeclaration _ result args _) = Ptr $ Function (typeOf result) (map typeOf args)
+  typeOf (FunctionDeclaration _ _ result args _) = Ptr $ Function (typeOf result) (map typeOf args)
+  typeOf AttributeGroup{} = undefined
 
 instance Typed a => Typed (Parameter a) where
-  typeOf = typeOf . parameter
+  typeOf (Parameter _ _ a)= typeOf a
 
 instance Typed BasicBlock where
   typeOf (BasicBlock _ _ terminator) = typeOf terminator
@@ -370,10 +399,31 @@ typeSize (Array n ty) = n * typeSize ty
 typeSize (Vector n ty) = n * typeSize ty
 typeSize ty = error $ "Type " ++ show ty ++ " isn't a primitive type!" -- TODO
 
+nameOf :: Global -> Name
+nameOf (VariableDefinition name _ _ _ _) = name
+nameOf (Alias name _ _ _ _) = name
+nameOf (FunctionDefinition name _ _ _ _) = name
+nameOf (TypeDef name _) = name -- TODO: Questionable
+nameOf (FunctionDeclaration name _ _ _ _) = name
+nameOf (AttributeGroup _ _) = undefined -- TODO
+
+globalRef :: Global -> Expression
+globalRef a = GlobalReference (nameOf a) (typeOf a)
+
 
 -- * Misc
 
-data GlobalKind = GlobalVariable | GlobalAlias | GlobalFunction | GlobalType | GlobalDeclaration deriving (Eq)
+instance Comonad Parameter where
+  extract (Parameter _ _ a) = a
+  duplicate a@(Parameter attrs alignment _) = Parameter attrs alignment a
+
+instance Applicative Parameter where
+  pure = Parameter [] (Alignment 0)
+  (<*>) = error "Parameter is not really Applicative!"
+
+data GlobalKind = GlobalVariable | GlobalAlias | GlobalFunction
+                | GlobalType | GlobalDeclaration | GlobalAttributeGroup
+  deriving (Eq)
 
 globalKind :: Global -> GlobalKind
 globalKind VariableDefinition{} = GlobalVariable
@@ -381,3 +431,4 @@ globalKind Alias{} = GlobalAlias
 globalKind FunctionDefinition{} = GlobalFunction
 globalKind TypeDef{} = GlobalType
 globalKind FunctionDeclaration{} = GlobalDeclaration
+globalKind AttributeGroup{} = GlobalAttributeGroup

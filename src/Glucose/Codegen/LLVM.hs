@@ -17,7 +17,7 @@ import Data.Traversable
 import Glucose.Identifier
 import Glucose.IR.Checked as IR
 import Glucose.Codegen.Target
-import LLVM.AST as LLVM hiding (Target)
+import LLVM.AST as LLVM hiding (Target, nameOf)
 import LLVM.DSL as LLVM hiding (LLVM)
 import LLVM.Name
 
@@ -34,7 +34,7 @@ codegenModuleDefinitions (IR.Module defs) = pack . concatMap show . codegenDefin
 codegenModule :: Comonad f => Target -> IR.Module f -> LLVM.Module
 codegenModule (llvmTarget -> target) = \case
   IR.Module [] -> LLVM.Module target []
-  IR.Module defs -> LLVM.Module target $ amble ++ codegenDefinitions (map extract defs)
+  IR.Module defs -> LLVM.Module target $ preamble ++ codegenDefinitions (map extract defs) ++ postamble
 
 codegenDefinitions :: Comonad f => [IR.Definition f] -> [LLVM.Global]
 codegenDefinitions = runCodegen . execLLVMT . mapM_ definition
@@ -46,26 +46,29 @@ type LLVM a = LLVMT (NameGenT Codegen) a
 type Codegen = Writer (Set.Set GeneratedFn)
 
 runCodegen :: Codegen [LLVM.Global] -> [LLVM.Global]
-runCodegen a = let (defs, toGenerate) = runWriter a in map generateFunction (Set.toList toGenerate) ++ defs
+runCodegen a = let (defs, toGenerate) = runWriter a in defs ++ map generateFunction (Set.toList toGenerate)
 
 -- * Internals
 
-amble :: [LLVM.Global]
-amble = typeDeclarations ++ functionDeclarations
+preamble :: [LLVM.Global]
+preamble = typeDeclarations
+
+postamble :: [LLVM.Global]
+postamble = functionDeclarations ++ attributeGroups
 
 definition :: Comonad f => Definition f -> LLVMT Codegen ()
 definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
     Reference Global to (llvmType -> ty) -> do
       let tyPtr = case ty of Ptr t -> t; _ -> ty
-      alias name (GlobalReference (nameOf to) tyPtr) tyPtr
+      alias name External Unnamed (GlobalReference (nameOf to) tyPtr) tyPtr
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
       let retTy = llvmType $ IR.typeOf (extract expr) & dataType %~ unboxed
-      void $ defineFunction name External llvmArgs (ret =<< coerce retTy =<< expression (extract expr))
-    _ -> void $ defineVariable name External $ expression (extract def)
+      void $ defineFunction name External llvmArgs functionAttributes (ret =<< coerce retTy =<< expression (extract expr))
+    _ -> void $ defineVariable name External Unnamed $ expression (extract def)
 definition (Constructor (nameOf -> name) _ index) =
-  void $ defineVariable name External (pure $ i32 index)
+  void $ defineVariable name External Unnamed (pure $ i32 index)
 
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
@@ -123,7 +126,7 @@ buildLambda :: Comonad f => Name -> Linkage -> [IR.Arg] -> IR.Expression f -> LL
 buildLambda name linkage args def = do
   let captured = map argument $ Set.toList (captures def) \\ args
   let fnArgs = captured ++ map argument args
-  lambda <- defineFunction name linkage fnArgs $ ret =<< expression def
+  lambda <- defineFunction name linkage fnArgs functionAttributes $ ret =<< expression def
   if null captured
     then pure lambda
     else do
@@ -133,7 +136,7 @@ buildLambda name linkage args def = do
 defineSlowWrapper :: LLVM.Expression -> LLVM LLVM.Expression
 defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = do
   let pargs = LLVM.Arg (mkName "args") (Ptr box)
-  defineFunction (slowName name) External [pargs] $ do -- TODO: Could this be private?
+  defineFunction (slowName name) External [pargs] functionAttributes $ do -- TODO: Could this be private?
     let (boxed, unboxed, unboxedType) = splitArgs argTypes
     let argsType = Struct [Array (length boxed) box, unboxedType]
     pargs' <- bitcast (argReference pargs) (Ptr argsType)

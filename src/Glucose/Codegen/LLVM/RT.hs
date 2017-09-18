@@ -1,7 +1,7 @@
 module Glucose.Codegen.LLVM.RT
 (
-  functionDeclarations, heapAlloc, heapAllocType, heapAllocN,
-  splitArgs, tagged,
+  functionDeclarations, attributeGroups, heapAlloc, heapAllocType, heapAllocN,
+  functionAttributes, splitArgs, tagged,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
   generateFunction, generatedName, generatedType,
 ) where
@@ -19,46 +19,39 @@ import LLVM.Name
 
 -- * Built-in runtime functions
 
-uncurry4 :: (a -> b -> c -> d -> e) -> (a, b, c, d) -> e
-uncurry4 f (a, b, c, d) = f a b c d
+_heapAlloc :: Global
+_heapAlloc = FunctionDeclaration (Name "$heapAlloc") External result args attrs where
+  result = Parameter ["nonnull", "noalias"] (Alignment 16) box
+  args = [Parameter [] (Alignment 0) size]
+  attrs = FunctionAttributes Unnamed ["allocsize(0)"] [0] (Alignment 16)
 
-_heapAlloc :: (Name, Parameter Type, [Type], FunctionAttributes)
-_heapAlloc = (rtName "heapAlloc", Parameter box True True (Just 16), [size], FunctionAttributes (Just 0))
-
-_memcpy :: (Name, Parameter Type, [Type], FunctionAttributes)
-_memcpy = ("llvm.memcpy.p0i8.p0i8.i64", Parameter Void False False Nothing, [Ptr (I 8), Ptr (I 8), I 64, I 32, I 1], FunctionAttributes Nothing)
--- _memcpy = ("memcpy", Parameter Void False False, [Ptr (I 8), Ptr (I 8), size], FunctionAttributes Nothing)
-
-_assume :: (Name, Parameter Type, [Type], FunctionAttributes)
-_assume = ("llvm.assume", Parameter Void False False Nothing, [I 1], FunctionAttributes Nothing)
+_memcpy :: Global
+_memcpy = FunctionDeclaration (Name "llvm.memcpy.p0i8.p0i8.i64") External result args attrs where
+  result = pure Void
+  args = map pure [Ptr (I 8), Ptr (I 8), I 64, I 32, I 1]
+  attrs = noAttributes Unnamed
 
 functionDeclarations :: [Global]
-functionDeclarations = map (uncurry4 FunctionDeclaration) [ _assume, _memcpy, _heapAlloc ]
+functionDeclarations = [_memcpy, _heapAlloc]
+
+attributeGroups :: [Global]
+attributeGroups = [AttributeGroup 0 ["nounwind", "align=16"]]
 
 heapAllocType :: Monad m => Type -> LLVMT m Expression
-heapAllocType ty = do
-    bytes <- sizeOf size ty
-    ptr <- heapAlloc bytes
-    bitcast ptr (Ptr ty)
+heapAllocType ty = flip bitcast (Ptr ty) =<< heapAlloc =<< sizeOf size ty
 
 heapAlloc :: Monad m => Expression -> LLVMT m Expression
-heapAlloc bytes = do
-  ptr <- callFn _heapAlloc [bytes]
-  -- assume =<< icmp Eq (integer size 0) =<< andOp (integer size 15) =<< ptrtoint ptr size
-  pure ptr
+heapAlloc bytes = call (globalRef _heapAlloc) [bytes]
 
 heapAllocN :: Monad m => Int -> LLVMT m Expression
 heapAllocN = heapAlloc . integer size
-
-assume :: Monad m => Expression -> LLVMT m ()
-assume cond = callFn_ _assume [cond]
 
 memcpy :: Monad m => Expression -> Expression -> Expression -> Int -> LLVMT m ()
 memcpy to from bytes align = do
   to' <- bitcast to (Ptr $ I 8)
   from' <- bitcast from (Ptr $ I 8)
-  -- callFn_ _memcpy [to', from', bytes]
-  callFn_ _memcpy [to', from', bytes, i32 align, integer (I 1) 0]
+  -- call_ (globalRef _memcpy) [to', from', bytes]
+  call_ (globalRef _memcpy) [to', from', bytes, i32 align, integer (I 1) 0]
 
   -- label_ "Start"
   -- noop <- icmp Eq bytes $ integer size 0
@@ -73,12 +66,6 @@ memcpy to from bytes align = do
   -- br done "Done" "Loop"
   --
   -- label "Done"
-
-callFn :: Monad m => (Name, Parameter Type, [Type], FunctionAttributes) -> [Expression] -> LLVMT m Expression
-callFn (name, result, args, _) = call $ GlobalReference name . Ptr $ Function (parameter result) args
-
-callFn_ :: Monad m => (Name, Parameter Type, [Type], FunctionAttributes) -> [Expression] -> LLVMT m ()
-callFn_ (name, result, args, _) = call_ $ GlobalReference name . Ptr $ Function (parameter result) args
 
 splitArgs :: [Type] -> ([Int], [Int], Type)
 splitArgs types = (boxed, fst unboxed, Packed $ snd unboxed) where
@@ -118,18 +105,21 @@ generatedName (GeneratedApply (ApplyFn ApplySlow resultType argTypes)) =
 tagged :: Monad m => Expression -> Int -> Type -> LLVMT m Expression
 tagged p tag ty | tag > 0 && tag < 16 = do
   comment $ "Tag " ++ show p ++ " with " ++ show tag
-  pInt <- ptrtoint p size
-  tagged <- orOp pInt (integer size tag)
+  tagged <- orOp (integer size tag) =<< ptrtoint p size
   inttoptr tagged ty
 tagged _ tag _ = error $ "Cannot tag a pointer with the value " ++ show tag
 
 untag :: Monad m => Expression -> LLVMT m (Expression, Expression)
 untag p = do
   pInt <- ptrtoint p size
-  untagged <- andOp pInt untagMask
-  tag <- andOp pInt (integer size 15)
-  -- tag <- trunc pInt (I 4)
+  untagged <- andOp pInt (integer size (-16))
+  -- tag <- andOp (integer size 15) pInt
+  tag <- trunc pInt (I 4)
   pure (tag, untagged)
+
+-- | Standard function attributes.
+functionAttributes :: FunctionAttributes
+functionAttributes = FunctionAttributes Unnamed [] [0] (Alignment 0)
 
 generatedType :: GeneratedFn -> Type
 generatedType (GeneratedApply (ApplyFn ApplySlow resultType _)) = functionType resultType [BoxRep, BoxRep]
@@ -141,7 +131,7 @@ generateFunction = evalLLVM . \case
   toGen@(GeneratedApply (ApplyFn ApplySlow resultType argTypes)) ->
     let fn = Arg "fn" box
         args = Arg "args" (Ptr box)
-     in singleFunctionDefinition (generatedName toGen) LinkOnceODR [args, fn] $ do
+     in singleFunctionDefinition (generatedName toGen) LinkOnceODR [args, fn] functionAttributes $ do
           untagged <- snd <$> untag (argReference fn)
           fp <- inttoptr untagged $ functionType resultType argTypes
           args <- for [0..length argTypes-1] $ \i -> do
@@ -153,9 +143,9 @@ generateFunction = evalLLVM . \case
     let fn = Arg "fn" box
         args = generatedArgs argTypes
         (boxed, unboxed, argsType) = splitArgs $ map repType argTypes
-     in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) $ do
+     in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) functionAttributes $ do
           (tag, untagged) <- untag (argReference fn)
-          isTrivial <- icmp Eq tag (integer size $ length args)
+          isTrivial <- icmp Eq tag (integer (I 4) $ length args)
           br isTrivial "Trivial" "Nontrivial"
 
           label "Trivial"
@@ -163,7 +153,7 @@ generateFunction = evalLLVM . \case
           jump "Fast"
 
           label "Nontrivial"
-          isClosure <- icmp Eq tag $ integer size 0
+          isClosure <- icmp Eq tag $ integer (I 4) 0
           br isClosure "Closure" "Function"
 
           label "Function"
@@ -172,7 +162,7 @@ generateFunction = evalLLVM . \case
           label "Closure"
           pclosure <- inttoptr untagged (Ptr closure) -- TODO: any better to cast from fn direct?
           pfn <- load =<< getelementptr pclosure [i64 0, i32 0]
-          nunbound <- load =<< getelementptr pclosure [i64 0, i32 1]
+          -- nunbound <- load =<< getelementptr pclosure [i64 0, i32 1]
           nboxed <- load =<< getelementptr pclosure [i64 0, i32 2]
           unboxedBytes <- flip zext size =<< load =<< getelementptr pclosure [i64 0, i32 3]
           pboxed <- getelementptr pclosure [i64 0, i32 4]

@@ -49,39 +49,42 @@ evalLLVM = fst . runLLVM
 
 -- * Declarations/definitions
 
-functionDefinition :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> m [Global]
-functionDefinition name linkage args def = do
+functionDefinition :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> m [Global]
+functionDefinition name linkage args attrs def = do
   DSL defs blocks label statements _ <- snd <$> runLLVMT def
   unless (null statements && isNothing label) $ error "function definition must end in a terminator"
-  pure $ defs ++ [FunctionDefinition name linkage args blocks]
+  pure $ defs ++ [FunctionDefinition name linkage (map pure args) attrs (pure blocks)]
 
-singleFunctionDefinition :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> m Global
-singleFunctionDefinition name linkage args def = do
-  defs <- functionDefinition name linkage args def
+singleFunctionDefinition :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> m Global
+singleFunctionDefinition name linkage args attrs def = do
+  defs <- functionDefinition name linkage args attrs def
   case defs of
     [def] -> pure def
     _ -> error "function definition cannot contain other globals"
 
-defineFunction :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> LLVMT m Expression
-defineFunction name linkage args definition = do
-  defs <- lift $ functionDefinition name linkage args definition
+defineFunction :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> LLVMT m Expression
+defineFunction name linkage args attrs definition = do
+  defs <- lift $ functionDefinition name linkage args attrs definition
   globals <>= defs
-  pure $ GlobalReference name (typeOf $ last defs)
+  pure . globalRef $ last defs
 
-variableDefinition :: Monad m => Name -> Linkage -> LLVMT m Expression -> m [Global]
-variableDefinition name linkage expr = do
+variableDefinition :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> m [Global]
+variableDefinition name linkage addr expr = do
   (value, DSL defs blocks label statements _) <- runLLVMT expr
   unless (null blocks && isNothing label && null statements) $ error "variable definition must consist of a single expression"
-  pure $ defs ++ [VariableDefinition name linkage value]
+  pure $ defs ++ [VariableDefinition name linkage addr value (Alignment 0)]
 
-defineVariable :: Monad m => Name -> Linkage -> LLVMT m Expression -> LLVMT m Expression
-defineVariable name linkage definition = do
-  defs <- lift $ variableDefinition name linkage definition
+defineVariable :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> LLVMT m Expression
+defineVariable name linkage addr definition = do
+  defs <- lift $ variableDefinition name linkage addr definition
   globals <>= defs
-  pure $ GlobalReference name (typeOf $ last defs)
+  pure . globalRef $ last defs
 
-alias :: Monad m => Name -> Expression -> Type -> LLVMT m ()
-alias = ((define .) .) . Alias
+alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m ()
+alias = ((((define .) .) .) .) . Alias
+
+attributeGroup :: Monad m => Int -> [String] -> LLVMT m ()
+attributeGroup = (define .) . AttributeGroup
 
 define :: Monad m => Global -> LLVMT m ()
 define def = globals <>= [def]
