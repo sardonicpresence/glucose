@@ -51,6 +51,7 @@ data Expression = Literal Literal
                 | Undefined Type
                 | GlobalReference Name Type
                 | LocalReference Name Type
+                | ConstGEP Expression [Expression]
                 | ConstConvert ConversionOp Expression Type
                 | ConstBinaryOp BinaryOp Expression Expression
                 | Placeholder Name Type
@@ -196,6 +197,8 @@ instance Show Expression where
   show (Undefined _) = "undef"
   show (GlobalReference name _) = global name
   show (LocalReference name _) = local name
+  show (ConstGEP p indices) =
+    "getelementptr inbounds (" ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices ++ ")"
   show (ConstConvert op expr ty) = show op ++ "(" ++ withType expr ++ " to " ++ show ty ++ ")"
   show (ConstBinaryOp op a b) = show op ++ "(" ++ withType a ++ ", " ++ withType b ++ ")"
   show Placeholder{} = error "Placeholder has not been replaced"
@@ -337,6 +340,7 @@ instance Typed Expression where
   typeOf (Undefined ty) = ty
   typeOf (GlobalReference _ ty) = ty
   typeOf (LocalReference _ ty) = ty
+  typeOf (ConstGEP p indices) = typeOf $ GEP p indices
   typeOf (ConstConvert _ _ ty) = ty
   typeOf (ConstBinaryOp op a _) = opType op $ typeOf a
   typeOf (Placeholder _ ty) = ty

@@ -63,10 +63,8 @@ singleFunctionDefinition name linkage args attrs def = do
     _ -> error "function definition cannot contain other globals"
 
 defineFunction :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> LLVMT m Expression
-defineFunction name linkage args attrs definition = do
-  defs <- lift $ functionDefinition name linkage args attrs definition
-  globals <>= defs
-  pure . globalRef $ last defs
+defineFunction name linkage args attrs definition =
+  define =<< lift (functionDefinition name linkage args attrs definition)
 
 variableDefinition :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> m [Global]
 variableDefinition name linkage addr expr = do
@@ -75,19 +73,17 @@ variableDefinition name linkage addr expr = do
   pure $ defs ++ [VariableDefinition name linkage addr value (Alignment 0)]
 
 defineVariable :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> LLVMT m Expression
-defineVariable name linkage addr definition = do
-  defs <- lift $ variableDefinition name linkage addr definition
-  globals <>= defs
-  pure . globalRef $ last defs
+defineVariable name linkage addr definition =
+  define =<< lift (variableDefinition name linkage addr definition)
 
-alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m ()
-alias = ((((define .) .) .) .) . Alias
+alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m Expression
+alias name linkage addr value ty = define [Alias name linkage addr value ty]
 
 attributeGroup :: Monad m => Int -> [String] -> LLVMT m ()
-attributeGroup = (define .) . AttributeGroup
+attributeGroup n attrs = globals <>= [AttributeGroup n attrs]
 
-define :: Monad m => Global -> LLVMT m ()
-define def = globals <>= [def]
+define :: Monad m => [Global] -> LLVMT m Expression
+define defs = globalRef (last defs) <$ (globals <>= defs)
 
 placeholder :: Name -> Type -> Expression
 placeholder = Placeholder
@@ -112,6 +108,9 @@ load = assignNew . Load
 getelementptr :: Monad m => Expression -> [Expression] -> LLVMT m Expression
 getelementptr = (assignNew .) . GEP
 
+getelementptr' :: Expression -> [Expression] -> Expression
+getelementptr' = ConstGEP
+
 bitcast, ptrtoint, inttoptr, trunc, zext :: Monad m => Expression -> Type -> LLVMT m Expression
 bitcast = convert Bitcast
 ptrtoint = convert PtrToInt
@@ -122,6 +121,17 @@ zext = convert Zext
 convert :: Monad m => ConversionOp -> Expression -> Type -> LLVMT m Expression
 convert _ a ty | typeOf a == ty = pure a
 convert op a ty = assignNew $ Convert op a ty
+
+bitcast', ptrtoint', inttoptr', trunc', zext' :: Expression -> Type -> Expression
+bitcast' = convert' Bitcast
+ptrtoint' = convert' PtrToInt
+inttoptr' = convert' IntToPtr
+trunc' = convert' Trunc
+zext' = convert' Zext
+
+convert' :: ConversionOp -> Expression -> Type -> Expression
+convert' _ a ty | typeOf a == ty = a
+convert' op a ty = ConstConvert op a ty
 
 alloca :: Monad m => Type -> Expression -> LLVMT m Expression
 alloca = (assignNew .) . Alloca
@@ -143,6 +153,24 @@ icmp = binaryOp . ICmp
 
 binaryOp :: Monad m => BinaryOp -> Expression -> Expression -> LLVMT m Expression
 binaryOp = ((assignNew .) .) . BinaryOp
+
+andOp', orOp', xorOp', addOp', subOp', mulOp' :: Expression -> Expression -> Expression
+andOp' = binaryOp' And
+orOp' = binaryOp' Or
+xorOp' = binaryOp' Xor
+addOp' = binaryOp' Add
+subOp' = binaryOp' Sub
+mulOp' = binaryOp' Mul
+
+inc', dec' :: Expression -> Expression
+inc' a = addOp' a $ integer (typeOf a) 1
+dec' a = subOp' a $ integer (typeOf a) 1
+
+icmp' :: Comparison -> Expression -> Expression -> Expression
+icmp' = binaryOp' . ICmp
+
+binaryOp' :: BinaryOp -> Expression -> Expression -> Expression
+binaryOp' = ConstBinaryOp
 
 phi :: Monad m => [(Expression, Name)] -> LLVMT m Expression
 phi (pred:preds) = assignNew $ Phi pred preds
@@ -225,5 +253,5 @@ undef = Undefined
 newLocal :: Monad m => LLVMT m Name
 newLocal = do lastVar += 1; uses lastVar localName
 
-sizeOf :: Monad m => Type -> Type -> LLVMT m Expression
-sizeOf tySize ty = flip ptrtoint tySize =<< getelementptr (zeroinitializer $ Ptr ty) [i64 1]
+sizeOf :: Type -> Type -> Expression
+sizeOf tySize ty = ptrtoint' (getelementptr' (zeroinitializer $ Ptr ty) [i64 1]) tySize

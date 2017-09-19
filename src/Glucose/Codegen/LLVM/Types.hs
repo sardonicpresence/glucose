@@ -1,7 +1,7 @@
 module Glucose.Codegen.LLVM.Types
 (
   Representation(..), typeRep, repType, functionType,
-  tagMask, untagMask, argAlign,
+  argAlign,
   boxed, box, fn, size, arity, argsize, closure,
   closureType, rtName, typeDeclarations
 ) where
@@ -33,11 +33,6 @@ functionType result args = Ptr $ Function (repType result) (map repType args)
 
 
 
-tagMask :: Expression
-tagMask = Literal $ IntegerLiteral (Just $ rtTypeName Size) 64 0xF
-
-untagMask :: Expression
-untagMask = Literal $ IntegerLiteral (Just $ rtTypeName Size) 64 (-0xF - 1)
 
 -- | Alignment of the first applied argument in a closure.
 argAlign :: Int
@@ -72,8 +67,19 @@ rtTypeRep Arity = I 16
 rtTypeRep ArgSize = I 32
 rtTypeRep Closure = closureType 0 []
 
+{- | The LLVM type of a closure with the given bound pointer & non-pointer arguments.
+
+  %$closure = type {
+    %$fn*, ; Code pointer + tag bits (used for..?)
+    %$arity, ; Number of unbound arguments
+    %$arity, ; Number of pointer args that follow
+    %$argsize, ; Number of bytes of non-pointer args that follow
+    [0 x %$box], ; Variable number of bound pointer arguments (must be 16-byte aligned)
+    <{}> ; Variable number of bound non-pointer arguments in a packed struct
+  }
+-}
 closureType :: Int -> [Type] -> Type
--- closureType 0 [] = Struct [Ptr fn, arity, arity, argsize, Array 0 box]
+closureType n [] = Struct [Ptr fn, arity, arity, argsize, Array n box]
 closureType n args = Struct [Ptr fn, arity, arity, argsize, Array n box, Packed args]
 
 rtType :: RTType -> Type

@@ -18,7 +18,7 @@ import Glucose.Identifier
 import Glucose.IR.Checked as IR
 import Glucose.Codegen.Target
 import LLVM.AST as LLVM hiding (Target, nameOf)
-import LLVM.DSL as LLVM hiding (LLVM)
+import LLVM.DSL as LLVM hiding (LLVM, defineFunction)
 import LLVM.Name
 
 -- * Compiler interface
@@ -61,11 +61,12 @@ definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
     Reference Global to (llvmType -> ty) -> do
       let tyPtr = case ty of Ptr t -> t; _ -> ty
-      alias name External Unnamed (GlobalReference (nameOf to) tyPtr) tyPtr
+      void $ alias name External Unnamed (GlobalReference (nameOf to) tyPtr) tyPtr
     Lambda args expr -> do
       let llvmArgs = map (argument . extract) args
       let retTy = llvmType $ IR.typeOf (extract expr) & dataType %~ unboxed
-      void $ defineFunction name External llvmArgs functionAttributes (ret =<< coerce retTy =<< expression (extract expr))
+      void $ defineFunction name External llvmArgs $
+        ret =<< coerce retTy =<< expression (extract expr)
     _ -> void $ defineVariable name External Unnamed $ expression (extract def)
 definition (Constructor (nameOf -> name) _ index) =
   void $ defineVariable name External Unnamed (pure $ i32 index)
@@ -107,7 +108,7 @@ fullApplication f retType args = do
       comment $ "Call unknown function " ++ show f
       let argTypes = map (llvmType . fst) args
       fnApply <- getApply ApplyUnknown retType argTypes
-      result <- LLVM.call fnApply $ preparedArgs ++ [bitcastFunctionRef f]
+      result <- LLVM.call fnApply $ preparedArgs ++ [f]
       coerce retType result
 
 partialApplication :: LLVM.Expression -> Partial f -> LLVM LLVM.Expression
@@ -126,7 +127,7 @@ buildLambda :: Comonad f => Name -> Linkage -> [IR.Arg] -> IR.Expression f -> LL
 buildLambda name linkage args def = do
   let captured = map argument $ Set.toList (captures def) \\ args
   let fnArgs = captured ++ map argument args
-  lambda <- defineFunction name linkage fnArgs functionAttributes $ ret =<< expression def
+  lambda <- defineFunction name linkage fnArgs $ ret =<< expression def
   if null captured
     then pure lambda
     else do
@@ -136,7 +137,7 @@ buildLambda name linkage args def = do
 defineSlowWrapper :: LLVM.Expression -> LLVM LLVM.Expression
 defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = do
   let pargs = LLVM.Arg (mkName "args") (Ptr box)
-  defineFunction (slowName name) External [pargs] functionAttributes $ do -- TODO: Could this be private?
+  defineFunction (slowName name) External [pargs] $ do -- TODO: Could this be private?
     let (boxed, unboxed, unboxedType) = splitArgs argTypes
     let argsType = Struct [Array (length boxed) box, unboxedType]
     pargs' <- bitcast (argReference pargs) (Ptr argsType)
@@ -146,34 +147,14 @@ defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = d
     ret =<< call fn args
 defineSlowWrapper _ = error "Can only define wrappers for global functions!"
 
-buildClosure :: Int -> LLVM.Expression -> [LLVM.Expression] -> LLVM LLVM.Expression
-buildClosure narity f args = do
-  let (boxed, unboxed, Packed unboxedTypes) = splitArgs $ map LLVM.typeOf args
-  let tyClosure = closureType (length boxed) unboxedTypes
-  comment $ "Build closure with arity " ++ show narity ++ " applying " ++ show (length unboxed) ++ " unboxed and " ++ show (length boxed) ++ " boxed arguments to " ++ show f
-  pclosure <- heapAllocType tyClosure
-  rfn <- bitcast f (Ptr fn)
-  -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
-  store rfn =<< getelementptr pclosure [i64 0, i32 0]
-  store (integer arity $ narity - length args) =<< getelementptr pclosure [i64 0, i32 1]
-  store (integer arity $ length boxed) =<< getelementptr pclosure [i64 0, i32 2]
-  unboxedBytes <- sizeOf argsize (Packed unboxedTypes)
-  store unboxedBytes =<< getelementptr pclosure [i64 0, i32 3]
-  for_ (zip [0..] $ map (args !!) boxed) $ \(i, arg) ->
-    store arg =<< getelementptr pclosure [i64 0, i32 4, integer arity i]
-  for_ (zip [0..] $ map (args !!) unboxed) $ \(i, arg) ->
-    store arg =<< getelementptr pclosure [i64 0, i32 5, integer arity i]
-  bitcast pclosure box
 
 -- * Casts & Conversions
 
 coerce :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
 coerce (valueType -> ty) arg = case LLVM.typeOf arg of
-  tyArg | ty == tyArg -> pure arg
-        | sameRepresentation ty tyArg -> bitcastAndTag arg ty
-        | Ptr ty == tyArg -> load arg
-        | sameRepresentation (Ptr ty) tyArg -> bitcast arg (Ptr ty) >>= load
-        | sameRepresentation ty (Ptr tyArg) -> boxValue arg >>= flip bitcast ty -- TODO: avoid bitcast if unnecessary?
+  tyArg | sameRepresentation ty tyArg -> arg `asType` ty
+        | sameRepresentation (Ptr ty) tyArg -> load =<< arg `asType` Ptr ty
+        | sameRepresentation ty (Ptr tyArg) -> flip bitcast ty =<< boxValue arg
         | otherwise -> error $ "Cannot apply expression of type " ++ show tyArg ++ " as argument of type " ++ show ty
 
 boxValue :: LLVM.Expression -> LLVM LLVM.Expression
@@ -183,18 +164,6 @@ boxValue expr = do
   box <- heapAllocType ty
   store expr box
   pure box
-
-bitcastAndTag :: LLVM.Expression -> LLVM.Type -> LLVM LLVM.Expression
-bitcastAndTag expr ty | ty == box = case LLVM.typeOf expr of
-  Ptr (LLVM.Function _ args) -> if length args < 16
-    then tagged expr (length args) ty
-    else buildClosure (length args) expr []
-  _ -> bitcast expr ty
-bitcastAndTag expr ty = bitcast expr ty
-
-bitcastFunctionRef :: LLVM.Expression -> LLVM.Expression
-bitcastFunctionRef a@(LLVM.GlobalReference _ LLVM.Function{}) = ConstConvert LLVM.Bitcast a box
-bitcastFunctionRef a = a
 
 llvmType :: IR.Type -> LLVM.Type
 llvmType (Type (Checked ty)) = case ty of

@@ -1,5 +1,6 @@
 module Glucose.Codegen.LLVM.RT
 (
+  defineFunction, asType, buildClosure,
   functionDeclarations, attributeGroups, heapAlloc, heapAllocType, heapAllocN,
   functionAttributes, splitArgs, tagged,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
@@ -7,15 +8,74 @@ module Glucose.Codegen.LLVM.RT
 ) where
 
 import Control.Lens
-import Data.Foldable
+import Control.Monad
 import Data.List
 import Data.Text (pack)
 import Data.Traversable
 import Glucose.Codegen.LLVM.Types
 import Glucose.VarGen
 import LLVM.AST
-import LLVM.DSL
+import qualified LLVM.DSL as DSL
+import LLVM.DSL hiding (defineFunction)
 import LLVM.Name
+
+-- * Code generation internals
+
+alignment :: Int
+alignment = 16
+
+defineFunction :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> LLVMT m Expression
+defineFunction name linkage args def = do
+  fn <- DSL.defineFunction name linkage args functionAttributes def
+  alias (taggedName name) linkage Unnamed (tagged (length args) fn) (deref $ typeOf fn)
+
+{- | Tag a pointer-typed expression with a number. Has no effect if the alignment is insufficient. -}
+tagged :: Int -> Expression -> Expression
+tagged n p | canTag n = inttoptr' (addOp' (integer size n) (ptrtoint' p size)) (typeOf p)
+tagged _ p = p
+
+{- | Can a pointer be tagged with the given value? -}
+canTag :: Int -> Bool
+canTag n = n > 0 && n < alignment
+
+asType :: Monad m => Expression -> Type -> LLVMT m Expression
+asType (GlobalReference name refTy@(Ptr (Function _ args))) ty | ty == box && canTag (length args) =
+  pure $ bitcast' (GlobalReference (taggedName name) refTy) box
+asType expr@(typeOf -> Ptr (Function _ args)) ty | ty == box = buildClosure (length args) expr []
+asType expr ty = bitcast expr ty
+
+getFunction, getUnbound, getPArgCount, getNPArgBytes :: Monad m => Expression -> LLVMT m Expression
+getFunction = flip getelementptr [i64 0, i32 0]
+getUnbound = flip getelementptr [i64 0, i32 1]
+getPArgCount = flip getelementptr [i64 0, i32 2]
+getNPArgBytes = flip getelementptr [i64 0, i32 3]
+getPArgs = flip getelementptr [i64 0, i32 4]
+
+getPArg, getNPArg :: Monad m => Expression -> Int -> LLVMT m Expression
+getPArg p i = getelementptr p [i64 0, i32 4, integer arity i]
+getNPArg p i = getelementptr p [i64 0, i32 5, integer arity i]
+
+{- | Builds a closure with the given original arity, function & bound arguments.
+   The given function must have the slow calling-convention i.e. take a single pointer
+   to an array of boxes containing pointer arguments, followed by a packed struct
+   containing non-pointer arguments.
+ -}
+buildClosure :: Monad m => Int -> Expression -> [Expression] -> LLVMT m Expression
+buildClosure narity f args = do
+  let (boxed, unboxed, Packed unboxedTypes) = splitArgs $ map typeOf args
+  let tyClosure = closureType (length boxed) unboxedTypes
+  comment $ "Build closure with arity " ++ show narity ++ " applying " ++ show (length unboxed)
+         ++ " unboxed and " ++ show (length boxed) ++ " boxed arguments to " ++ show f
+  pclosure <- heapAllocType tyClosure
+  -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
+  join $ store <$> bitcast f (Ptr fn) <*> getFunction pclosure
+  store (integer arity $ narity - length args) =<< getUnbound pclosure
+  store (integer arity $ length boxed) =<< getPArgCount pclosure
+  store (sizeOf argsize $ Packed unboxedTypes) =<< getNPArgBytes pclosure
+  ifor_ (map (args !!) boxed) $ \i arg -> store arg =<< getPArg pclosure i
+  ifor_ (map (args !!) unboxed) $ \i arg -> store arg =<< getNPArg pclosure i
+  bitcast pclosure box
+
 
 -- * Built-in runtime functions
 
@@ -23,7 +83,7 @@ _heapAlloc :: Global
 _heapAlloc = FunctionDeclaration (Name "$heapAlloc") External result args attrs where
   result = Parameter ["nonnull", "noalias"] (Alignment 16) box
   args = [Parameter [] (Alignment 0) size]
-  attrs = FunctionAttributes Unnamed ["allocsize(0)"] [0] (Alignment 16)
+  attrs = FunctionAttributes Unnamed ["allocsize(0)"] [0] (Alignment alignment)
 
 _memcpy :: Global
 _memcpy = FunctionDeclaration (Name "llvm.memcpy.p0i8.p0i8.i64") External result args attrs where
@@ -35,10 +95,10 @@ functionDeclarations :: [Global]
 functionDeclarations = [_memcpy, _heapAlloc]
 
 attributeGroups :: [Global]
-attributeGroups = [AttributeGroup 0 ["nounwind", "align=16"]]
+attributeGroups = [AttributeGroup 0 ["nounwind", "align=" ++ show alignment]]
 
 heapAllocType :: Monad m => Type -> LLVMT m Expression
-heapAllocType ty = flip bitcast (Ptr ty) =<< heapAlloc =<< sizeOf size ty
+heapAllocType ty = flip bitcast (Ptr ty) =<< heapAlloc (sizeOf size ty)
 
 heapAlloc :: Monad m => Expression -> LLVMT m Expression
 heapAlloc bytes = call (globalRef _heapAlloc) [bytes]
@@ -66,6 +126,8 @@ memcpy to from bytes align = do
   -- br done "Done" "Loop"
   --
   -- label "Done"
+
+-- * Utilities
 
 splitArgs :: [Type] -> ([Int], [Int], Type)
 splitArgs types = (boxed, fst unboxed, Packed $ snd unboxed) where
@@ -102,18 +164,17 @@ generatedName (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) =
 generatedName (GeneratedApply (ApplyFn ApplySlow resultType argTypes)) =
   rtName . pack $ "slow" ++ map repCode (resultType : argTypes)
 
-tagged :: Monad m => Expression -> Int -> Type -> LLVMT m Expression
-tagged p tag ty | tag > 0 && tag < 16 = do
-  comment $ "Tag " ++ show p ++ " with " ++ show tag
-  tagged <- orOp (integer size tag) =<< ptrtoint p size
-  inttoptr tagged ty
-tagged _ tag _ = error $ "Cannot tag a pointer with the value " ++ show tag
+-- tagged :: Monad m => Expression -> Int -> Type -> LLVMT m Expression
+-- tagged p tag ty | tag > 0 && tag < alignment = do
+--   comment $ "Tag " ++ show p ++ " with " ++ show tag
+--   tagged <- orOp (integer size tag) =<< ptrtoint p size
+--   inttoptr tagged ty
+-- tagged _ tag _ = error $ "Cannot tag a pointer with the value " ++ show tag
 
 untag :: Monad m => Expression -> LLVMT m (Expression, Expression)
 untag p = do
   pInt <- ptrtoint p size
-  untagged <- andOp pInt (integer size (-16))
-  -- tag <- andOp (integer size 15) pInt
+  untagged <- andOp pInt (integer size (-alignment))
   tag <- trunc pInt (I 4)
   pure (tag, untagged)
 
@@ -142,10 +203,10 @@ generateFunction = evalLLVM . \case
   toGen@(GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) ->
     let fn = Arg "fn" box
         args = generatedArgs argTypes
-        (boxed, unboxed, argsType) = splitArgs $ map repType argTypes
+        (boxed, unboxed, unboxedType) = splitArgs $ map repType argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) functionAttributes $ do
           (tag, untagged) <- untag (argReference fn)
-          isTrivial <- icmp Eq tag (integer (I 4) $ length args)
+          isTrivial <- icmp Eq tag $ integer (I 4) (length args)
           br isTrivial "Trivial" "Nontrivial"
 
           label "Trivial"
@@ -161,16 +222,14 @@ generateFunction = evalLLVM . \case
 
           label "Closure"
           pclosure <- inttoptr untagged (Ptr closure) -- TODO: any better to cast from fn direct?
-          pfn <- load =<< getelementptr pclosure [i64 0, i32 0]
-          -- nunbound <- load =<< getelementptr pclosure [i64 0, i32 1]
-          nboxed <- load =<< getelementptr pclosure [i64 0, i32 2]
-          unboxedBytes <- flip zext size =<< load =<< getelementptr pclosure [i64 0, i32 3]
-          pboxed <- getelementptr pclosure [i64 0, i32 4]
+          pfn <- load =<< getFunction pclosure
+          nboxed <- load =<< getPArgCount pclosure
+          unboxedArgSize <- load =<< getNPArgBytes pclosure
 
           noBoxed <- icmp Eq nboxed $ integer arity 0
-          noUnboxed <- icmp Eq unboxedBytes $ integer size 0
-          notPartial <- andOp noBoxed noUnboxed
-          br notPartial "Raw" "Partial"
+          noUnboxed <- icmp Eq unboxedArgSize $ integer argsize 0
+          noBound <- andOp noBoxed noUnboxed
+          br noBound "Raw" "Partial"
 
           label "Raw"
           raw <- bitcast pfn (functionType resultType argTypes)
@@ -180,44 +239,45 @@ generateFunction = evalLLVM . \case
           ret =<< call pfast (map argReference args)
 
           label "Partial"
-          -- ntotal <- flip zext (I 64) =<< addOp napplied (integer arity $ length args)
 
-          -- Allocate space for argument stack
-          nboxed' <- addOp nboxed $ integer arity (length boxed)
-          boxBytes <- sizeOf size box
-          boxedBytes <- mulOp boxBytes =<< zext nboxed' size
-          boundBytes <- addOp boxedBytes unboxedBytes
-          newBytes <- sizeOf size argsType
-          bytes <- addOp boundBytes newBytes
-          pargs <- flip bitcast (Ptr box) =<< heapAlloc bytes
-          -- ptotal <- flip bitcast (Ptr box) =<< alloca (I 8) bytes
+          comment "Allocate space for argument stack"
+          nboxed' <- flip zext size =<< addOp nboxed (integer arity $ length boxed)
+          boxedBytes' <- mulOp nboxed' (sizeOf size box)
+          unboxedBytes <- zext unboxedArgSize size
+          unboxedBytes' <- addOp (sizeOf size unboxedType) unboxedBytes
+          argBytes <- addOp boxedBytes' unboxedBytes'
+          -- pargs <- flip bitcast (Ptr $ Array 0 box) =<< alloca (I 8) argBytes
+          pargs <- flip bitcast (Ptr $ Array 0 box) =<< heapAlloc argBytes
 
-          -- Push bound boxed arguments
+          comment "Push bound boxed arguments"
+          pboxed <- getPArgs pclosure
           label_ "PushBoxed"
           iboxed <- phi [(integer arity 0, "Partial"), (placeholder "iboxed'" arity, "PushBoxed")]
           from <- getelementptr pboxed [i64 0, iboxed]
-          to <- getelementptr pargs [iboxed]
-          flip store to =<< load from
+          to <- getelementptr pargs [i64 0, iboxed]
+          join $ store <$> load from <*> pure to
           iboxed' <- as "iboxed'" =<< inc iboxed
           done <- icmp Eq iboxed' nboxed
           br done "PushedBoxed" "PushBoxed"
           label "PushedBoxed"
 
-          -- Push new boxed arguments
-          for_ (zip [0..] $ map (args !!) boxed) $ \(i, arg) ->
-            store (argReference arg) =<< getelementptr pargs . pure =<< addOp iboxed' (integer arity i)
+          comment "Push new boxed arguments"
+          ifor_ (map (args !!) boxed) $ \i arg -> do
+            index <- addOp nboxed $ integer arity i
+            store (argReference arg) =<< getelementptr pargs [i64 0, index]
 
-          -- Push bound unboxed arguments
+          comment "Push bound unboxed arguments"
           punboxed <- getelementptr pboxed [i64 0, nboxed]
-          punboxed' <- getelementptr pargs [nboxed']
-          memcpy punboxed punboxed' unboxedBytes argAlign
+          punboxed' <- getelementptr pargs [i64 0, nboxed']
+          -- TODO: consider using something much simpler than memcpy - there will be few bytes
+          memcpy punboxed punboxed' unboxedBytes alignment
 
-          -- Push new unboxed arguments
-          pnewUnboxed <- flip inttoptr (Ptr argsType) =<< addOp unboxedBytes =<< ptrtoint punboxed' size
-          for_ (zip [0..] $ map (args !!) unboxed) $ \(i, arg) ->
+          comment "Push new unboxed arguments"
+          pnewUnboxed <- flip inttoptr (Ptr unboxedType) =<< addOp unboxedBytes =<< ptrtoint punboxed' size
+          ifor_ (map (args !!) unboxed) $ \i arg ->
             store (argReference arg) =<< getelementptr pnewUnboxed [i64 0, i32 i]
 
-          -- Make the call
-          let tyTarget = Function (repType resultType) [Ptr box]
+          comment "Make the call"
+          let tyTarget = Function (repType resultType) [Ptr $ Array 0 box]
           target <- bitcast pfn (Ptr tyTarget)
           ret =<< call target [pargs]
