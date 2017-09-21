@@ -27,7 +27,7 @@ alignment = 16
 defineFunction :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> LLVMT m Expression
 defineFunction name linkage args def = do
   fn <- DSL.defineFunction name linkage args functionAttributes def
-  alias (taggedName name) linkage Unnamed (tagged (length args) fn) (deref $ typeOf fn)
+  alias (taggedName name) linkage Named (tagged (length args) fn) (deref $ typeOf fn)
 
 {- | Tag a pointer-typed expression with a number. Has no effect if the alignment is insufficient. -}
 tagged :: Int -> Expression -> Expression
@@ -55,7 +55,7 @@ getPArg, getNPArg :: Monad m => Expression -> Int -> LLVMT m Expression
 getPArg p i = getelementptr p [i64 0, i32 4, integer arity i]
 getNPArg p i = getelementptr p [i64 0, i32 5, integer arity i]
 
-{- | Builds a closure with the given original arity, function & bound arguments.
+{- | Builds a closure with the given residual arity, function & bound arguments.
    The given function must have the slow calling-convention i.e. take a single pointer
    to an array of boxes containing pointer arguments, followed by a packed struct
    containing non-pointer arguments.
@@ -279,5 +279,6 @@ generateFunction = evalLLVM . \case
 
           comment "Make the call"
           let tyTarget = Function (repType resultType) [Ptr $ Array 0 box]
-          target <- bitcast pfn (Ptr tyTarget)
+          target <- flip inttoptr (Ptr tyTarget) =<< snd <$> untag pfn
+          -- target <- bitcast pfn (Ptr tyTarget)
           ret =<< call target [pargs]

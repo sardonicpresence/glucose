@@ -88,7 +88,7 @@ expression (Apply (extract -> f) (extract -> x) retTy) = do
   coerce (llvmType retTy) =<< maybe (pure fullApplications) (partialApplication fullApplications) partial
 
 argument :: IR.Arg -> LLVM.Arg
-argument (IR.Arg name ty) = LLVM.Arg (nameOf name) (llvmType ty)
+argument (IR.Arg name ty) = LLVM.Arg (nameOf name) (valueType $ llvmType ty)
 
 literal :: IR.Literal -> LLVM.Expression
 literal (IR.IntegerLiteral n) = i32 n
@@ -142,7 +142,7 @@ defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = d
     let argsType = Struct [Array (length boxed) box, unboxedType]
     pargs' <- bitcast (argReference pargs) (Ptr argsType)
     argsBoxed <- for [0..length boxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 0, integer arity i]
-    argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, integer arity i]
+    argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, i32 i]
     let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
     ret =<< call fn args
 defineSlowWrapper _ = error "Can only define wrappers for global functions!"

@@ -8,7 +8,7 @@ default : example.js example.exe
 # example.exe : example.o src\RT\rt.o
 # 	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
 
-example.exe : example.bc src/RT/rt.bc
+%.exe : %.bc src/RT/rt.bc
 	lld-link $^ /subsystem:windows /entry:_start /out:$@ /debug /defaultlib:kernel32 /mllvm:-mcpu=broadwell /mllvm:-O3
 
 %.o : %.s
