@@ -12,11 +12,10 @@ import Control.Monad
 import Data.List
 import Data.Text (pack)
 import Data.Traversable
+import Glucose.Codegen.LLVM.DSL hiding (defineFunction)
+import qualified Glucose.Codegen.LLVM.DSL as DSL
 import Glucose.Codegen.LLVM.Types
 import Glucose.VarGen
-import LLVM.AST
-import qualified LLVM.DSL as DSL
-import LLVM.DSL hiding (defineFunction)
 import LLVM.Name
 
 -- * Code generation internals
@@ -80,13 +79,13 @@ buildClosure narity f args = do
 -- * Built-in runtime functions
 
 _heapAlloc :: Global
-_heapAlloc = FunctionDeclaration (Name "$heapAlloc") External result args attrs where
+_heapAlloc = FunctionDeclaration (Name "$heapAlloc") External callingConvention result args attrs where
   result = Parameter ["nonnull", "noalias"] (Alignment 16) box
   args = [Parameter [] (Alignment 0) size]
   attrs = FunctionAttributes Unnamed ["allocsize(0)"] [0] (Alignment alignment)
 
 _memcpy :: Global
-_memcpy = FunctionDeclaration (Name "llvm.memcpy.p0i8.p0i8.i64") External result args attrs where
+_memcpy = FunctionDeclaration (Name "llvm.memcpy.p0i8.p0i8.i64") External callingConvention result args attrs where
   result = pure Void
   args = map pure [Ptr (I 8), Ptr (I 8), I 64, I 32, I 1]
   attrs = noAttributes Unnamed

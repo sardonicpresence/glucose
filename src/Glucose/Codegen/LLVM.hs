@@ -14,11 +14,10 @@ import Data.List
 import qualified Data.Set as Set
 import Data.Text (Text, pack)
 import Data.Traversable
+import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, defineFunction, nameOf)
+import Glucose.Codegen.Target
 import Glucose.Identifier
 import Glucose.IR.Checked as IR
-import Glucose.Codegen.Target
-import LLVM.AST as LLVM hiding (Target, nameOf)
-import LLVM.DSL as LLVM hiding (LLVM, defineFunction)
 import LLVM.Name
 
 -- * Compiler interface

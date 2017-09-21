@@ -49,22 +49,22 @@ evalLLVM = fst . runLLVM
 
 -- * Declarations/definitions
 
-functionDefinition :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> m [Global]
-functionDefinition name linkage args attrs def = do
+functionDefinition :: Monad m => Name -> Linkage -> CallingConvention -> [Arg] -> FunctionAttributes -> LLVMT m () -> m [Global]
+functionDefinition name linkage cc args attrs def = do
   DSL defs blocks label statements _ <- snd <$> runLLVMT def
   unless (null statements && isNothing label) $ error "function definition must end in a terminator"
-  pure $ defs ++ [FunctionDefinition name linkage (map pure args) attrs (pure blocks)]
+  pure $ defs ++ [FunctionDefinition name linkage cc (map pure args) attrs (pure blocks)]
 
-singleFunctionDefinition :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> m Global
-singleFunctionDefinition name linkage args attrs def = do
-  defs <- functionDefinition name linkage args attrs def
+singleFunctionDefinition :: Monad m => Name -> Linkage -> CallingConvention -> [Arg] -> FunctionAttributes -> LLVMT m () -> m Global
+singleFunctionDefinition name linkage cc args attrs def = do
+  defs <- functionDefinition name linkage cc args attrs def
   case defs of
     [def] -> pure def
     _ -> error "function definition cannot contain other globals"
 
-defineFunction :: Monad m => Name -> Linkage -> [Arg] -> FunctionAttributes -> LLVMT m () -> LLVMT m Expression
-defineFunction name linkage args attrs definition =
-  define =<< lift (functionDefinition name linkage args attrs definition)
+defineFunction :: Monad m => Name -> Linkage -> CallingConvention -> [Arg] -> FunctionAttributes -> LLVMT m () -> LLVMT m Expression
+defineFunction name linkage cc args attrs definition =
+  define =<< lift (functionDefinition name linkage cc args attrs definition)
 
 variableDefinition :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> m [Global]
 variableDefinition name linkage addr expr = do
@@ -90,11 +90,11 @@ placeholder = Placeholder
 
 -- * Statements
 
-call :: Monad m => Expression -> [Expression] -> LLVMT m Expression
-call = (assignNew .) . Call
+call :: Monad m => CallingConvention -> Expression -> [Expression] -> LLVMT m Expression
+call = ((assignNew .) .) . Call
 
-call_ :: Monad m => Expression -> [Expression] -> LLVMT m ()
-call_ = (state .) . VoidCall
+call_ :: Monad m => CallingConvention -> Expression -> [Expression] -> LLVMT m ()
+call_ = ((state .) .) . VoidCall
 
 store :: Monad m => Expression -> Expression -> LLVMT m ()
 store = (state .) . Store

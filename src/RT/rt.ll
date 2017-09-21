@@ -24,25 +24,27 @@ target triple = "x86_64-pc-windows"
 @MEM_RESERVE = private unnamed_addr constant i32 8192
 @MEM_RESERVE_COMMIT = private unnamed_addr constant i32 12288
 @MEM_READWRITE = private unnamed_addr constant i32 4
-declare dllimport i8* @VirtualAlloc(i8*, i64, i32, i32)
-declare dllimport void @ExitProcess(i32) nounwind ; noreturn produces less minimal instructions in _start
+declare dllimport x86_stdcallcc i8* @VirtualAlloc(i8*, i64, i32, i32)
+declare dllimport x86_stdcallcc void @ExitProcess(i32) nounwind noreturn
 
-declare i32 @main(%$box) unnamed_addr nounwind
+declare fastcc i32 @main(%$box) unnamed_addr #0
 
 define void @_start() unnamed_addr norecurse noreturn nounwind {
-  %1 = call i32 @main(%$box null)
-  tail call void @ExitProcess(i32 %1)
+  %1 = call fastcc i32 @main(%$box null)
+  tail call x86_stdcallcc void @ExitProcess(i32 %1)
   ret void
 }
 
-define nonnull noalias align 16 %$box* @$heapAlloc(%$size %bytes) unnamed_addr allocsize(0) nounwind align 16 {
-  %1 = call i8* @VirtualAlloc(i8* null, %$size %bytes, i32 12288, i32 4)
-  %2 = bitcast i8* %1 to %$box*
-  ret %$box* %2
+define fastcc nonnull noalias align 8 %$box* @$heapAlloc(%$size %bytes) unnamed_addr #0 allocsize(0) {
+  %1 = load i32, i32* @MEM_RESERVE_COMMIT
+  %2 = load i32, i32* @MEM_READWRITE
+  %3 = call x86_stdcallcc i8* @VirtualAlloc(i8* null, %$size %bytes, i32 %1, i32 %2)
+  %4 = bitcast i8* %3 to %$box*
+  ret %$box* %4
 }
 
 ; TODO: Consider taking advantage of alignment somehow
-define void @memcpy(i8* %to, i8* %from, %$size %bytes) unnamed_addr align 16 nounwind {
+define fastcc void @memcpy(i8* %to, i8* %from, %$size %bytes) unnamed_addr #0 {
   %1 = icmp eq %$size %bytes, 0
   br i1 %1, label %Done, label %Loop
 Loop:
@@ -57,3 +59,5 @@ Loop:
 Done:
   ret void
 }
+
+attributes #0 = { nounwind align=16 }

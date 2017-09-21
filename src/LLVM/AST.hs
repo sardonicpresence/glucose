@@ -11,9 +11,9 @@ data Module = Module Target [Global] deriving (Eq)
 -- TODO: split things without types e.g. TypeDef & AttributeGroup into different type
 data Global = VariableDefinition Name Linkage UnnamedAddr Expression Alignment
             | Alias Name Linkage UnnamedAddr Expression Type
-            | FunctionDefinition Name Linkage [Parameter Arg] FunctionAttributes (Parameter [BasicBlock])
+            | FunctionDefinition Name Linkage CallingConvention [Parameter Arg] FunctionAttributes (Parameter [BasicBlock])
             | TypeDef Name Type
-            | FunctionDeclaration Name Linkage (Parameter Type) [Parameter Type] FunctionAttributes
+            | FunctionDeclaration Name Linkage CallingConvention (Parameter Type) [Parameter Type] FunctionAttributes
             | AttributeGroup Int [String]
   deriving (Eq)
 
@@ -27,12 +27,12 @@ noAttributes addr = FunctionAttributes addr [] [] (Alignment 0)
 data BasicBlock = BasicBlock (Maybe Name) [Statement] Terminator deriving (Eq)
 
 data Statement = Assignment Name Assignment
-               | VoidCall Expression [Expression]
+               | VoidCall CallingConvention Expression [Expression]
                | Store Expression Expression
                | Comment String
   deriving (Eq)
 
-data Assignment = Call Expression [Expression]
+data Assignment = Call CallingConvention Expression [Expression]
                 | Load Expression
                 | GEP Expression [Expression]
                 | Convert ConversionOp Expression Type
@@ -74,6 +74,8 @@ data UnnamedAddr = Named | Unnamed | LocalUnnamed deriving (Eq)
 
 newtype Alignment = Alignment Int deriving (Eq) -- 0 indicates no alignment
 
+data CallingConvention = CCC | FastCC | StdCall deriving (Eq)
+
 data ConversionOp = Bitcast | PtrToInt | IntToPtr | Trunc | Zext deriving (Eq)
 
 data BinaryOp = And | Or | Xor | Add | Sub | Mul | ICmp Comparison deriving (Eq)
@@ -98,11 +100,11 @@ class References a where
   expressions :: Traversal' a Expression
 instance References Statement where
   expressions f (Assignment name assignment) = Assignment name <$> expressions f assignment
-  expressions f (VoidCall fn args) = VoidCall <$> f fn <*> traverse f args
+  expressions f (VoidCall cc fn args) = VoidCall cc <$> f fn <*> traverse f args
   expressions f (Store from to) = Store <$> f from <*> f to
   expressions _ (Comment s) = pure $ Comment s
 instance References Assignment where
-  expressions f (Call fn args) = Call <$> f fn <*> traverse f args
+  expressions f (Call cc fn args) = Call cc <$> f fn <*> traverse f args
   expressions f (Load ptr) = Load <$> f ptr
   expressions f (GEP ptr indices) = GEP <$> f ptr <*> traverse f indices
   expressions f (Convert op arg ty) = Convert op <$> f arg <*> pure ty
@@ -127,13 +129,13 @@ instance Show Global where
   show (Alias to linkage addr from ty) =
     global to ++ " =" ++ withSpace linkage ++ withSpace addr
               ++ " alias " ++ show ty ++ ", " ++ show (Ptr ty) ++ " " ++ show from ++ "\n"
-  show (FunctionDefinition name linkage args attrs blocks) =
-    "define" ++ withSpace linkage ++ " " ++ show (defReturnType <$> blocks) ++ " "
+  show (FunctionDefinition name linkage cc args attrs blocks) =
+    "define" ++ withSpace linkage ++ withSpace cc ++ " " ++ show (defReturnType <$> blocks) ++ " "
              ++ global name ++ "(" ++ arguments args ++ ")" ++ withSpace attrs
              ++ " {\n" ++ concatMap show (extract blocks) ++ "}\n"
   show (TypeDef name ty) = local name ++ " = type " ++ show ty ++ "\n"
-  show (FunctionDeclaration name linkage result args attrs) =
-    "declare" ++ withSpace linkage ++ withSpace result ++ " "
+  show (FunctionDeclaration name linkage cc result args attrs) =
+    "declare" ++ withSpace linkage ++ withSpace cc ++ withSpace result ++ " "
               ++ global name ++ "(" ++ intercalate ", " (map show args) ++ ")" ++ withSpace attrs ++ " \n"
   show (AttributeGroup n attrs) =
     "attributes #" ++ show n ++ " = { " ++ unwords attrs ++ " }"
@@ -151,13 +153,13 @@ instance Show BasicBlock where
     where showLine s = "  " ++ show s ++ "\n"
 
 instance Show Statement where
-  show (VoidCall f args) = show (Call f args)
+  show (VoidCall cc f args) = show (Call cc f args)
   show (Assignment name assignment) = local name ++ " = " ++ show assignment
   show (Store from to) = "store " ++ withType from ++ ", " ++ withType to
   show (Comment s) = "; " ++ s
 
 instance Show Assignment where
-  show (Call f args) = "tail call " ++ show (returnType . deref $ typeOf f) ++ " " ++ show f ++ "(" ++ arguments args ++ ")"
+  show (Call cc f args) = "tail call" ++ withSpace cc ++ " " ++ show (returnType . deref $ typeOf f) ++ " " ++ show f ++ "(" ++ arguments args ++ ")"
   show (Load value) = "load " ++ show (deref $ typeOf value) ++ ", " ++ withType value
   show (GEP p indices) =
     "getelementptr inbounds " ++ show (deref $ typeOf p) ++ ", " ++ withType p ++ concatMap ((", " ++) . withType) indices
@@ -216,6 +218,11 @@ instance Show UnnamedAddr where
 instance Show Alignment where
   show (Alignment 0) = ""
   show (Alignment n) = "align " ++ show n
+
+instance Show CallingConvention where
+  show CCC = "" -- Default
+  show FastCC = "fastcc"
+  show StdCall = "x86_stdcallcc"
 
 instance Show Arg where
   show (Arg name _) = local name
@@ -298,9 +305,9 @@ instance Typed Type where
 instance Typed Global where
   typeOf (VariableDefinition _ _ _ expr _) = typeOf expr
   typeOf (Alias _ _ _ _ ty) = Ptr ty
-  typeOf (FunctionDefinition _ _ args _ blocks) = Ptr $ Function (defReturnType $ extract blocks) $ map typeOf args
+  typeOf (FunctionDefinition _ _ _ args _ blocks) = Ptr $ Function (defReturnType $ extract blocks) $ map typeOf args
   typeOf TypeDef{} = undefined
-  typeOf (FunctionDeclaration _ _ result args _) = Ptr $ Function (typeOf result) (map typeOf args)
+  typeOf (FunctionDeclaration _ _ _ result args _) = Ptr $ Function (typeOf result) (map typeOf args)
   typeOf AttributeGroup{} = undefined
 
 instance Typed a => Typed (Parameter a) where
@@ -310,7 +317,7 @@ instance Typed BasicBlock where
   typeOf (BasicBlock _ _ terminator) = typeOf terminator
 
 instance Typed Assignment where
-  typeOf (Call f _) = returnType $ typeOf f
+  typeOf (Call _ f _) = returnType $ typeOf f
   typeOf (Load expr) = deref $ typeOf expr
   typeOf (GEP p indices) = Ptr $ foldl dereference (typeOf p) indices where
     dereference ty index = case ty of
@@ -406,9 +413,9 @@ typeSize ty = error $ "Type " ++ show ty ++ " isn't a primitive type!" -- TODO
 nameOf :: Global -> Name
 nameOf (VariableDefinition name _ _ _ _) = name
 nameOf (Alias name _ _ _ _) = name
-nameOf (FunctionDefinition name _ _ _ _) = name
+nameOf (FunctionDefinition name _ _ _ _ _) = name
 nameOf (TypeDef name _) = name -- TODO: Questionable
-nameOf (FunctionDeclaration name _ _ _ _) = name
+nameOf (FunctionDeclaration name _ _ _ _ _) = name
 nameOf (AttributeGroup _ _) = undefined -- TODO
 
 globalRef :: Global -> Expression
