@@ -9,6 +9,7 @@ import Control.Lens.TH ()
 import Control.Monad.Identity
 import Control.Monad.State hiding (state)
 import Data.Maybe
+import Data.Monoid ((<>))
 
 -- * LLVMT monad transformer
 
@@ -193,6 +194,12 @@ jump = terminator . Jump
 br :: Monad m => Expression -> Name -> Name -> LLVMT m ()
 br = ((terminator .) .) . Branch
 
+br_ :: Monad m => Expression -> Name -> LLVMT m ()
+br_ cond target@(Name n) = let def = Name ("not" <> n) in br cond target def >> label def
+
+switch :: Monad m => Expression -> Name -> [(Expression, Name)] -> LLVMT m ()
+switch = ((terminator .) .) . Switch
+
 unreachable :: Monad m => LLVMT m ()
 unreachable = terminator Unreachable
 
@@ -224,7 +231,11 @@ state statement = statements <>= [statement]
 zeroinitializer :: Type -> Expression
 zeroinitializer = Literal . ZeroInitializer
 
-i32 :: Int -> Expression
+i1 :: Bool -> Expression
+i1 a = integer (I 1) $ if a then 1 else 0
+
+i4, i32 :: Int -> Expression
+i4 = integer (I 4)
 i32 = integer (I 32)
 
 i64 :: Integral a => a -> Expression

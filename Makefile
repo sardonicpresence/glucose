@@ -23,6 +23,9 @@ default : example.js example.exe
 %.ll : %.glc $(BIN)/glucose.exe
 	stack exec glucose -- $<
 
+%.opt.ll : %.bc
+	opt -S $^ >$@
+
 %.js : %.glc $(BIN)/glucose.exe
 	stack exec glucose -- -t js $<
 
@@ -44,4 +47,4 @@ clean :
 
 .PHONY : default build test doc clean
 
-.PRECIOUS : %.ll %.opt %.s %.o
+.PRECIOUS : %.ll %.opt.ll %.s %.o %.bc

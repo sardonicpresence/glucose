@@ -14,7 +14,7 @@ import Data.List
 import qualified Data.Set as Set
 import Data.Text (Text, pack)
 import Data.Traversable
-import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, defineFunction, nameOf)
+import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, defineFunction, alias, nameOf)
 import Glucose.Codegen.Target
 import Glucose.Identifier
 import Glucose.IR.Checked as IR
@@ -116,9 +116,10 @@ partialApplication f (Partial n args) = -- TODO
 
 getApply :: ApplyType -> LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
 getApply applyType returnType argTypes = do
-  let genType = GeneratedApply $ ApplyFn applyType (typeRep returnType) (map typeRep argTypes)
-  tell $ Set.singleton genType
-  pure $ LLVM.GlobalReference (generatedName genType) (generatedType genType)
+  let genType = GeneratedApply . ApplyFn applyType (typeRep returnType)
+  let genTypes = map genType . tails $ map typeRep argTypes
+  tell . Set.fromList . tail $ reverse genTypes -- Each may need to delegate to those taking fewer args
+  pure $ LLVM.GlobalReference (generatedName $ head genTypes) (generatedType $ head genTypes)
 
 -- * Lambdas & Closures
 
@@ -130,8 +131,8 @@ buildLambda name linkage args def = do
   if null captured
     then pure lambda
     else do
-      slow <- defineSlowWrapper lambda
-      buildClosure (length fnArgs) slow $ map argReference captured
+      slow <- defineSlowWrapper lambda -- TODO: don't wrap the tagged alias!!!
+      buildClosure (integer arity $ length fnArgs) slow $ map argReference captured
 
 defineSlowWrapper :: LLVM.Expression -> LLVM LLVM.Expression
 defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = do
@@ -143,7 +144,8 @@ defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = d
     argsBoxed <- for [0..length boxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 0, integer arity i]
     argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, i32 i]
     let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
-    ret =<< call fn args
+    target <- flip inttoptr (LLVM.typeOf fn) =<< snd <$> untag fn -- TODO: shouldn't be required
+    ret =<< call target args
 defineSlowWrapper _ = error "Can only define wrappers for global functions!"
 
 
@@ -156,6 +158,7 @@ coerce (valueType -> ty) arg = case LLVM.typeOf arg of
         | sameRepresentation ty (Ptr tyArg) -> flip bitcast ty =<< boxValue arg
         | otherwise -> error $ "Cannot apply expression of type " ++ show tyArg ++ " as argument of type " ++ show ty
 
+-- TODO: another case of `asType`?
 boxValue :: LLVM.Expression -> LLVM LLVM.Expression
 boxValue expr = do
   comment $ "Box " ++ show expr
@@ -187,7 +190,7 @@ withNewGlobal :: (Name -> LLVM a) -> LLVM a
 withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name) (f name)
 
 slowName :: Name -> Name
-slowName (Name n) = Name $ n <> "$$"
+slowName (Name n) = Name $ n <> "$$slow"
 
 nameOf :: (Bound f a, Comonad f) => a -> Name
 nameOf name = case identify name of Identifier n -> mkName n

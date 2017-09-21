@@ -1,18 +1,19 @@
 module Glucose.Codegen.LLVM.RT
 (
-  defineFunction, asType, buildClosure,
+  defineFunction, alias, asType, buildClosure,
   functionDeclarations, attributeGroups, heapAlloc, heapAllocType, heapAllocN,
-  functionAttributes, splitArgs, tagged,
+  functionAttributes, splitArgs, tagged, untag,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
   generateFunction, generatedName, generatedType,
 ) where
 
 import Control.Lens
 import Control.Monad
+import Data.Foldable
 import Data.List
 import Data.Text (pack)
 import Data.Traversable
-import Glucose.Codegen.LLVM.DSL hiding (defineFunction)
+import Glucose.Codegen.LLVM.DSL hiding (defineFunction, alias)
 import qualified Glucose.Codegen.LLVM.DSL as DSL
 import Glucose.Codegen.LLVM.Types
 import Glucose.VarGen
@@ -26,7 +27,13 @@ alignment = 16
 defineFunction :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> LLVMT m Expression
 defineFunction name linkage args def = do
   fn <- DSL.defineFunction name linkage args functionAttributes def
-  alias (taggedName name) linkage Named (tagged (length args) fn) (deref $ typeOf fn)
+  DSL.alias (taggedName name) linkage Named (tagged (length args) fn) (deref $ typeOf fn)
+
+alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m Expression
+alias name linkage addr value@(GlobalReference ref refTy@Function{}) ty = do
+  void $ DSL.alias name linkage addr value ty
+  DSL.alias (taggedName name) linkage addr (GlobalReference (taggedName ref) refTy) ty
+alias name linkage addr value ty = DSL.alias name linkage addr value ty
 
 {- | Tag a pointer-typed expression with a number. Has no effect if the alignment is insufficient. -}
 tagged :: Int -> Expression -> Expression
@@ -40,7 +47,8 @@ canTag n = n > 0 && n < alignment
 asType :: Monad m => Expression -> Type -> LLVMT m Expression
 asType (GlobalReference name refTy@(Ptr (Function _ args))) ty | ty == box && canTag (length args) =
   pure $ bitcast' (GlobalReference (taggedName name) refTy) box
-asType expr@(typeOf -> Ptr (Function _ args)) ty | ty == box = buildClosure (length args) expr []
+-- TODO: if/when does the below case occur?
+asType expr@(typeOf -> Ptr (Function _ args)) ty | ty == box = buildClosure (integer arity $ length args) expr []
 asType expr ty = bitcast expr ty
 
 getFunction, getUnbound, getPArgCount, getNPArgBytes :: Monad m => Expression -> LLVMT m Expression
@@ -52,23 +60,24 @@ getPArgs = flip getelementptr [i64 0, i32 4]
 
 getPArg, getNPArg :: Monad m => Expression -> Int -> LLVMT m Expression
 getPArg p i = getelementptr p [i64 0, i32 4, integer arity i]
-getNPArg p i = getelementptr p [i64 0, i32 5, integer arity i]
+getNPArg p i = getelementptr p [i64 0, i32 5, i32 i]
 
-{- | Builds a closure with the given residual arity, function & bound arguments.
+{- | Builds a closure with the given original arity, function & bound arguments.
    The given function must have the slow calling-convention i.e. take a single pointer
    to an array of boxes containing pointer arguments, followed by a packed struct
    containing non-pointer arguments.
  -}
-buildClosure :: Monad m => Int -> Expression -> [Expression] -> LLVMT m Expression
+buildClosure :: Monad m => Expression -> Expression -> [Expression] -> LLVMT m Expression
 buildClosure narity f args = do
   let (boxed, unboxed, Packed unboxedTypes) = splitArgs $ map typeOf args
   let tyClosure = closureType (length boxed) unboxedTypes
-  comment $ "Build closure with arity " ++ show narity ++ " applying " ++ show (length unboxed)
-         ++ " unboxed and " ++ show (length boxed) ++ " boxed arguments to " ++ show f
+  comment $ "Build closure applying " ++ show (length unboxed) ++ " unboxed and "
+         ++ show (length boxed) ++ " boxed arguments to " ++ show f ++ " with arity " ++ show narity
   pclosure <- heapAllocType tyClosure
   -- slow <- load =<< flip getelementptr [i64 (-1)] =<< bitcast f (Ptr fn)
   join $ store <$> bitcast f (Ptr fn) <*> getFunction pclosure
-  store (integer arity $ narity - length args) =<< getUnbound pclosure
+  nunbound <- flip subOp (integer arity $ length args) =<< zext narity arity
+  store nunbound =<< getUnbound pclosure
   store (integer arity $ length boxed) =<< getPArgCount pclosure
   store (sizeOf argsize $ Packed unboxedTypes) =<< getNPArgBytes pclosure
   ifor_ (map (args !!) boxed) $ \i arg -> store arg =<< getPArg pclosure i
@@ -109,22 +118,7 @@ memcpy :: Monad m => Expression -> Expression -> Expression -> Int -> LLVMT m ()
 memcpy to from bytes align = do
   to' <- bitcast to (Ptr $ I 8)
   from' <- bitcast from (Ptr $ I 8)
-  -- call_ (globalRef _memcpy) [to', from', bytes]
-  call_ (globalRef _memcpy) [to', from', bytes, i32 align, integer (I 1) 0]
-
-  -- label_ "Start"
-  -- noop <- icmp Eq bytes $ integer size 0
-  -- br noop "Done" "Loop"
-  --
-  -- label "Loop"
-  -- i <- phi [(integer size 0, "Start"), (placeholder "inext" size, "Loop")]
-  -- v <- load =<< getelementptr from' [i]
-  -- store v =<< getelementptr to' [i]
-  -- inext <- as "inext" =<< inc i
-  -- done <- icmp Eq inext bytes
-  -- br done "Done" "Loop"
-  --
-  -- label "Done"
+  call_ (globalRef _memcpy) [to', from', bytes, i32 align, i1 False]
 
 -- * Utilities
 
@@ -133,7 +127,6 @@ splitArgs types = (boxed, fst unboxed, Packed $ snd unboxed) where
   boxed = findIndices isBoxed types
   unboxed = unzip $ itoListOf (folded . filtered (not . isBoxed)) types
   isBoxed = (BoxRep ==) . typeRep
-
 
 -- * Generated Functions
 
@@ -205,39 +198,56 @@ generateFunction = evalLLVM . \case
         (boxed, unboxed, unboxedType) = splitArgs $ map repType argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) functionAttributes $ do
           (tag, untagged) <- untag (argReference fn)
-          isTrivial <- icmp Eq tag $ integer (I 4) (length args)
-          br isTrivial "Trivial" "Nontrivial"
-
-          label "Trivial"
           fp <- inttoptr untagged $ functionType resultType argTypes
-          jump "Fast"
-
-          label "Nontrivial"
-          isClosure <- icmp Eq tag $ integer (I 4) 0
+          isClosure <- icmp Eq tag $ i4 0
           br isClosure "Closure" "Function"
 
           label "Function"
-          ret $ undef (repType resultType) -- TODO
+          when (length args > 1) $ do
+            isOver <- icmp Ult tag $ i4 (length args)
+            br_ isOver "OverFunction"
+          isPartial <- icmp Ugt tag $ i4 (length args)
+          br_ isPartial "PartialFunction"
+
+          comment "Fully applied function"
+          ret =<< call fp (map argReference args)
+
+          when (length args > 1) $ do
+            label "OverFunction"
+            let apply n = mkName . pack $ "Apply" ++ show n
+            switch tag (apply 1) [(i4 n, apply n) | n <- [2 .. length args - 1]]
+            for_ (reverse [1 .. length args - 1]) $ \n -> do
+              label $ apply n
+              fp <- inttoptr untagged $ functionType resultType $ take n argTypes
+              frest <- call fp (map argReference $ take n args)
+              let delegate = GeneratedApply . ApplyFn ApplyUnknown resultType $ drop n argTypes
+              let delegateRef = GlobalReference (generatedName delegate) (generatedType delegate)
+              ret =<< call delegateRef (map argReference (drop n args) ++ [frest])
+
+          label "PartialFunction"
+          ret =<< buildClosure tag fp (map argReference args)
 
           label "Closure"
           pclosure <- inttoptr untagged (Ptr closure) -- TODO: any better to cast from fn direct?
           pfn <- load =<< getFunction pclosure
           nboxed <- load =<< getPArgCount pclosure
           unboxedArgSize <- load =<< getNPArgBytes pclosure
+          hasBound <- icmp Ne (integer argsize 0) =<< addOp unboxedArgSize =<< zext nboxed argsize
+          br hasBound "Bound" "NoBound"
 
-          noBoxed <- icmp Eq nboxed $ integer arity 0
-          noUnboxed <- icmp Eq unboxedArgSize $ integer argsize 0
-          noBound <- andOp noBoxed noUnboxed
-          br noBound "Raw" "Partial"
-
-          label "Raw"
+          label "NoBound"
           raw <- bitcast pfn (functionType resultType argTypes)
+          ret =<< call raw (map argReference args)
 
-          label_ "Fast"
-          pfast <- phi [(fp, "Trivial"), (raw, "Raw")]
-          ret =<< call pfast (map argReference args)
+          label "Bound"
+          nunbound <- load =<< getUnbound pclosure
+          when (length args > 1) $ do
+            isOver <- icmp Ult nunbound $ i4 (length args)
+            br_ isOver "OverClosure"
+          isPartial' <- icmp Ugt nunbound $ i4 (length args)
+          br isPartial' "PartialClosure" "FullClosure"
 
-          label "Partial"
+          label "FullClosure"
 
           comment "Allocate space for argument stack"
           nboxed' <- flip zext size =<< addOp nboxed (integer arity $ length boxed)
@@ -251,7 +261,7 @@ generateFunction = evalLLVM . \case
           comment "Push bound boxed arguments"
           pboxed <- getPArgs pclosure
           label_ "PushBoxed"
-          iboxed <- phi [(integer arity 0, "Partial"), (placeholder "iboxed'" arity, "PushBoxed")]
+          iboxed <- phi [(integer arity 0, "FullClosure"), (placeholder "iboxed'" arity, "PushBoxed")]
           from <- getelementptr pboxed [i64 0, iboxed]
           to <- getelementptr pargs [i64 0, iboxed]
           join $ store <$> load from <*> pure to
@@ -268,7 +278,7 @@ generateFunction = evalLLVM . \case
           comment "Push bound unboxed arguments"
           punboxed <- getelementptr pboxed [i64 0, nboxed]
           punboxed' <- getelementptr pargs [i64 0, nboxed']
-          -- TODO: consider using something much simpler than memcpy - there will be few bytes
+          -- TODO: consider using something simpler than memcpy - there will be few bytes
           memcpy punboxed punboxed' unboxedBytes alignment
 
           comment "Push new unboxed arguments"
@@ -278,6 +288,12 @@ generateFunction = evalLLVM . \case
 
           comment "Make the call"
           let tyTarget = Function (repType resultType) [Ptr $ Array 0 box]
-          target <- flip inttoptr (Ptr tyTarget) =<< snd <$> untag pfn
+          target <- flip inttoptr (Ptr tyTarget) =<< snd <$> untag pfn -- TODO: shouldn't be required
           -- target <- bitcast pfn (Ptr tyTarget)
           ret =<< call target [pargs]
+
+          label "OverClosure"
+          ret $ undef (repType resultType) -- TODO
+
+          label "PartialClosure"
+          ret $ undef (repType resultType) -- TODO

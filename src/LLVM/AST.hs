@@ -43,6 +43,7 @@ data Assignment = Call CallingConvention Expression [Expression]
 
 data Terminator = Return Expression
                 | Branch Expression Name Name
+                | Switch Expression Name [(Expression, Name)]
                 | Jump Name
                 | Unreachable
   deriving (Eq)
@@ -80,7 +81,7 @@ data ConversionOp = Bitcast | PtrToInt | IntToPtr | Trunc | Zext deriving (Eq)
 
 data BinaryOp = And | Or | Xor | Add | Sub | Mul | ICmp Comparison deriving (Eq)
 
-data Comparison = Eq deriving (Eq)
+data Comparison = Eq | Ne | Ugt | Uge | Ult | Ule | Sgt | Sge | Slt | Sle deriving (Eq)
 
 -- * Target
 
@@ -172,6 +173,8 @@ instance Show Assignment where
 instance Show Terminator where
   show (Return expr) = "ret " ++ withType expr
   show (Branch cond ifTrue ifFalse) = "br " ++ withType cond ++ ", label " ++ local ifTrue ++ ", label " ++ local ifFalse
+  show (Switch cond def cases) = "switch " ++ withType cond ++ ", label " ++ local def ++ " [ " ++
+    unwords (map (\(val, label) -> withType val ++ ", label " ++ local label) cases) ++ " ]"
   show (Jump label) = "br label " ++ local label
   show Unreachable = "unreachable"
 
@@ -193,6 +196,15 @@ instance Show BinaryOp where
 
 instance Show Comparison where
   show Eq = "eq"
+  show Ne = "ne"
+  show Ugt = "ugt"
+  show Uge = "uge"
+  show Ult = "ult"
+  show Ule = "ule"
+  show Sgt = "sgt"
+  show Sge = "sge"
+  show Slt = "slt"
+  show Sle = "sle"
 
 instance Show Expression where
   show (Literal value) = show value
