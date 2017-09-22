@@ -195,7 +195,6 @@ generateFunction = evalLLVM . \case
   toGen@(GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) ->
     let fn = Arg "fn" box
         args = generatedArgs argTypes
-        (boxed, unboxed, unboxedType) = splitArgs $ map repType argTypes
      in singleFunctionDefinition (generatedName toGen) LinkOnceODR (args ++ [fn]) functionAttributes $ do
           (tag, untagged) <- untag (argReference fn)
           fp <- inttoptr untagged $ functionType resultType argTypes
@@ -247,53 +246,71 @@ generateFunction = evalLLVM . \case
           isPartial' <- icmp Ugt nunbound $ i4 (length args)
           br isPartial' "PartialClosure" "FullClosure"
 
-          label "FullClosure"
+          ret =<< applyClosure "FullClosure" "" resultType argTypes pclosure
 
-          comment "Allocate space for argument stack"
-          nboxed' <- flip zext size =<< addOp nboxed (integer arity $ length boxed)
-          boxedBytes' <- mulOp nboxed' (sizeOf size box)
-          unboxedBytes <- zext unboxedArgSize size
-          unboxedBytes' <- addOp (sizeOf size unboxedType) unboxedBytes
-          argBytes <- addOp boxedBytes' unboxedBytes'
-          -- pargs <- flip bitcast (Ptr $ Array 0 box) =<< alloca (I 8) argBytes
-          pargs <- flip bitcast (Ptr $ Array 0 box) =<< heapAlloc argBytes
-
-          comment "Push bound boxed arguments"
-          pboxed <- getPArgs pclosure
-          label_ "PushBoxed"
-          iboxed <- phi [(integer arity 0, "FullClosure"), (placeholder "iboxed'" arity, "PushBoxed")]
-          from <- getelementptr pboxed [i64 0, iboxed]
-          to <- getelementptr pargs [i64 0, iboxed]
-          join $ store <$> load from <*> pure to
-          iboxed' <- as "iboxed'" =<< inc iboxed
-          done <- icmp Eq iboxed' nboxed
-          br done "PushedBoxed" "PushBoxed"
-          label "PushedBoxed"
-
-          comment "Push new boxed arguments"
-          ifor_ (map (args !!) boxed) $ \i arg -> do
-            index <- addOp nboxed $ integer arity i
-            store (argReference arg) =<< getelementptr pargs [i64 0, index]
-
-          comment "Push bound unboxed arguments"
-          punboxed <- getelementptr pboxed [i64 0, nboxed]
-          punboxed' <- getelementptr pargs [i64 0, nboxed']
-          -- TODO: consider using something simpler than memcpy - there will be few bytes
-          memcpy punboxed punboxed' unboxedBytes alignment
-
-          comment "Push new unboxed arguments"
-          pnewUnboxed <- flip inttoptr (Ptr unboxedType) =<< addOp unboxedBytes =<< ptrtoint punboxed' size
-          ifor_ (map (args !!) unboxed) $ \i arg ->
-            store (argReference arg) =<< getelementptr pnewUnboxed [i64 0, i32 i]
-
-          comment "Make the call"
-          let tyTarget = Function (repType resultType) [Ptr $ Array 0 box]
-          target <- flip inttoptr (Ptr tyTarget) =<< snd <$> untag pfn -- TODO: shouldn't be required
-          -- target <- bitcast pfn (Ptr tyTarget)
-          ret =<< call target [pargs]
-
-          label "OverClosure"
-          ret $ undef (repType resultType) -- TODO
+          when (length args > 1) $ do
+            label "OverClosure"
+            let apply n = mkName . pack $ "ClosureApply" ++ show n
+            switch nunbound (apply 1) [(integer arity n, apply n) | n <- [2 .. length args - 1]]
+            for_ (reverse [1 .. length args - 1]) $ \n -> do
+              frest <- applyClosure (apply n) (show n) BoxRep (take n argTypes) pclosure
+              let delegate = GeneratedApply . ApplyFn ApplyUnknown resultType $ drop n argTypes
+              let delegateRef = GlobalReference (generatedName delegate) (generatedType delegate)
+              ret =<< call delegateRef (map argReference (drop n args) ++ [frest])
 
           label "PartialClosure"
+          -- ret =<< buildClosure tag fp (map argReference args)
           ret $ undef (repType resultType) -- TODO
+
+applyClosure startLabel suffix resultType argTypes pclosure = do
+  let suffixed name = mkName . pack $ name ++ suffix
+  let (boxed, unboxed, unboxedType) = splitArgs $ map repType argTypes
+  let args = generatedArgs argTypes
+
+  label startLabel
+  pfn <- load =<< getFunction pclosure
+  nboxed <- load =<< getPArgCount pclosure
+  unboxedArgSize <- load =<< getNPArgBytes pclosure
+
+  comment "Allocate space for argument stack"
+  nboxed' <- flip zext size =<< addOp nboxed (integer arity $ length boxed)
+  boxedBytes' <- mulOp nboxed' (sizeOf size box)
+  unboxedBytes <- zext unboxedArgSize size
+  unboxedBytes' <- addOp (sizeOf size unboxedType) unboxedBytes
+  argBytes <- addOp boxedBytes' unboxedBytes'
+  -- pargs <- flip bitcast (Ptr $ Array 0 box) =<< alloca (I 8) argBytes
+  pargs <- flip bitcast (Ptr $ Array 0 box) =<< heapAlloc argBytes
+
+  comment "Push bound boxed arguments"
+  pboxed <- getPArgs pclosure
+  label_ $ suffixed "PushBoxed"
+  iboxed <- phi [(integer arity 0, startLabel), (placeholder "iboxed'" arity, suffixed "PushBoxed")]
+  from <- getelementptr pboxed [i64 0, iboxed]
+  to <- getelementptr pargs [i64 0, iboxed]
+  join $ store <$> load from <*> pure to
+  iboxed' <- as "iboxed'" =<< inc iboxed
+  done <- icmp Eq iboxed' nboxed
+  br done (suffixed "PushedBoxed") (suffixed "PushBoxed")
+  label $ suffixed "PushedBoxed"
+
+  comment "Push new boxed arguments"
+  ifor_ (map (args !!) boxed) $ \i arg -> do
+    index <- addOp nboxed $ integer arity i
+    store (argReference arg) =<< getelementptr pargs [i64 0, index]
+
+  comment "Push bound unboxed arguments"
+  punboxed <- getelementptr pboxed [i64 0, nboxed]
+  punboxed' <- getelementptr pargs [i64 0, nboxed']
+  -- TODO: consider using something simpler than memcpy - there will be few bytes
+  memcpy punboxed punboxed' unboxedBytes alignment
+
+  comment "Push new unboxed arguments"
+  pnewUnboxed <- flip inttoptr (Ptr unboxedType) =<< addOp unboxedBytes =<< ptrtoint punboxed' size
+  ifor_ (map (args !!) unboxed) $ \i arg ->
+    store (argReference arg) =<< getelementptr pnewUnboxed [i64 0, i32 i]
+
+  comment "Make the call"
+  let tyTarget = Function (repType resultType) [Ptr $ Array 0 box]
+  target <- flip inttoptr (Ptr tyTarget) =<< snd <$> untag pfn -- TODO: shouldn't be required
+  -- target <- bitcast pfn (Ptr tyTarget)
+  call target [pargs]
