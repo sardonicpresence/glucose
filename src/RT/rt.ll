@@ -44,6 +44,7 @@ define fastcc nonnull noalias align 8 %$box* @$heapAlloc(%$size %bytes) unnamed_
 }
 
 ; TODO: Consider taking advantage of alignment somehow
+; TODO: Based solely on name, LLVM refuses to eliminate this function if unused!
 define fastcc void @memcpy(i8* %to, i8* %from, %$size %bytes) unnamed_addr #0 {
   %1 = icmp eq %$size %bytes, 0
   br i1 %1, label %Done, label %Loop

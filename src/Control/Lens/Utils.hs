@@ -6,6 +6,9 @@ import Control.Monad.State.Class
 
 type Recursion s = forall m. Monad m => LensLike m s s s s
 
+modifies :: MonadState s m => (a -> s -> s) -> a -> m a
+modifies f a = a <$ modify (f a)
+
 modifyM :: MonadState a m => (a -> m a) -> m ()
 modifyM f = put =<< f =<< get
 

@@ -4,9 +4,11 @@ import Test.Prelude
 
 import Control.Comonad
 import Data.Foldable
-import Data.Monoid
+import Data.Maybe (fromJust)
+import Data.Monoid ((<>))
 import Data.Text
 import Glucose.Codegen
+import Glucose.Codegen.Target
 import Glucose.Compiler
 
 source :: Text
@@ -22,7 +24,7 @@ spec = describe "compile" $ do
   it "fails on unexpected operator" . forAllOutputs $ \t ->
     compile t " \n$~" `shouldErrorContaining` "$~"
   it "correctly compiles utf8 example to LLVM" $
-    unpack <$> compile (codegenDefinitions LLVM) source `shouldBe`
+    unpack <$> compile (codegenDefinitions $ LLVM target) source `shouldBe`
       Right ("@b = unnamed_addr alias i32, i32* @$5d0$_a0\n" ++
              "@$5d0$_a0 = unnamed_addr constant i32 1230, align 16\n" ++
              "@_b$5d5$0 = unnamed_addr constant double 1.23, align 16\n" ++
@@ -38,4 +40,7 @@ spec = describe "compile" $ do
              "\x5d3 = new \x5d1_()\n")
 
 forAllOutputs :: (Comonad f, Applicative m) => (Codegen f -> m a) -> m ()
-forAllOutputs f = traverse_ (f . codegen) [LLVM, JavaScript]
+forAllOutputs f = traverse_ (f . codegen) [LLVM target, JavaScript]
+
+target :: Target
+target = fromJust $ parseTriple "x86_64-pc-mingw32"

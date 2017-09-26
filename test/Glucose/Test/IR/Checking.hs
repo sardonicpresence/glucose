@@ -7,6 +7,9 @@ import Glucose.IR
 box :: Type Checking -> Type Checking
 box = dataType %~ boxed
 
+unbox :: Type Checking -> Type Checking
+unbox = dataType %~ unboxed
+
 free :: Identifier -> Type Checking
 free = Type . Free
 

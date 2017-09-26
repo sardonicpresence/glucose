@@ -1,19 +1,24 @@
 module Glucose.Codegen.LLVM.RT
 (
-  defineFunction, alias, asType, buildClosure,
+  defineFunction, defineVariable, alias, asType, buildClosure,
   functionDeclarations, attributeGroups, heapAlloc, heapAllocType, heapAllocN,
   functionAttributes, splitArgs, tagged, untag,
   Representation(..), GeneratedFn(..), ApplyFn(..), ApplyType(..),
-  generateFunction, generatedName, generatedType,
-) where
+  Codegen, runCodegen, generated, generateFunction, generatedName, generatedType,
+)
+where
 
 import Control.Lens
+import Control.Lens.Utils
 import Control.Monad
+import Control.Monad.State.Strict
 import Data.Foldable
 import Data.List
+import Data.Maybe
+import qualified Data.Map.Strict as Map
 import Data.Text (pack)
 import Data.Traversable
-import Glucose.Codegen.LLVM.DSL hiding (defineFunction, alias)
+import Glucose.Codegen.LLVM.DSL hiding (defineFunction, defineVariable, alias)
 import qualified Glucose.Codegen.LLVM.DSL as DSL
 import Glucose.Codegen.LLVM.Types
 import Glucose.VarGen
@@ -28,6 +33,9 @@ defineFunction :: Monad m => Name -> Linkage -> [Arg] -> LLVMT m () -> LLVMT m E
 defineFunction name linkage args def = do
   fn <- DSL.defineFunction name linkage args functionAttributes def
   DSL.alias (taggedName name) linkage Named (tagged (length args) fn) (deref $ typeOf fn)
+
+defineVariable :: Monad m => Name -> Linkage -> LLVMT m Expression -> LLVMT m Expression
+defineVariable name linkage def = DSL.defineVariable name linkage Unnamed def (Alignment alignment)
 
 alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m Expression
 alias name linkage addr value@(GlobalReference ref refTy@Function{}) ty = do
@@ -51,7 +59,7 @@ asType (GlobalReference name refTy@(Ptr (Function _ args))) ty | ty == box && ca
 asType expr@(typeOf -> Ptr (Function _ args)) ty | ty == box = buildClosure (integer arity $ length args) expr []
 asType expr ty = bitcast expr ty
 
-getFunction, getUnbound, getPArgCount, getNPArgBytes :: Monad m => Expression -> LLVMT m Expression
+getFunction, getUnbound, getPArgCount, getNPArgBytes, getPArgs :: Monad m => Expression -> LLVMT m Expression
 getFunction = flip getelementptr [i64 0, i32 0]
 getUnbound = flip getelementptr [i64 0, i32 1]
 getPArgCount = flip getelementptr [i64 0, i32 2]
@@ -174,12 +182,20 @@ untag p = do
 functionAttributes :: FunctionAttributes
 functionAttributes = FunctionAttributes Unnamed [] [0] (Alignment 0)
 
+type Codegen = State (Map.Map GeneratedFn Global)
+
+runCodegen :: Codegen [Global] -> [Global]
+runCodegen a = let (defs, generated) = runState a Map.empty in defs ++ Map.elems generated
+
+generated :: GeneratedFn -> Codegen Expression
+generated fn = globalRef <$> liftM2 fromMaybe (modifies (Map.insert fn) =<< generateFunction fn) (gets $ Map.lookup fn)
+
 generatedType :: GeneratedFn -> Type
 generatedType (GeneratedApply (ApplyFn ApplySlow resultType _)) = functionType resultType [BoxRep, BoxRep]
 generatedType (GeneratedApply (ApplyFn ApplyUnknown resultType argTypes)) = functionType resultType argTypes
 
-generateFunction :: GeneratedFn -> Global
-generateFunction = evalLLVM . \case
+generateFunction :: GeneratedFn -> Codegen Global
+generateFunction = \case
   -- Are these always required? Only for public functions?
   toGen@(GeneratedApply (ApplyFn ApplySlow resultType argTypes)) ->
     let fn = Arg "fn" box
@@ -219,8 +235,7 @@ generateFunction = evalLLVM . \case
               label $ apply n
               fp <- inttoptr untagged $ functionType resultType $ take n argTypes
               frest <- call fp (map argReference $ take n args)
-              let delegate = GeneratedApply . ApplyFn ApplyUnknown resultType $ drop n argTypes
-              let delegateRef = GlobalReference (generatedName delegate) (generatedType delegate)
+              delegateRef <- lift . generated . GeneratedApply . ApplyFn ApplyUnknown resultType $ drop n argTypes
               ret =<< call delegateRef (map argReference (drop n args) ++ [frest])
 
           label "PartialFunction"
@@ -254,14 +269,14 @@ generateFunction = evalLLVM . \case
             switch nunbound (apply 1) [(integer arity n, apply n) | n <- [2 .. length args - 1]]
             for_ (reverse [1 .. length args - 1]) $ \n -> do
               frest <- applyClosure (apply n) (show n) BoxRep (take n argTypes) pclosure
-              let delegate = GeneratedApply . ApplyFn ApplyUnknown resultType $ drop n argTypes
-              let delegateRef = GlobalReference (generatedName delegate) (generatedType delegate)
+              delegateRef <- lift . generated . GeneratedApply . ApplyFn ApplyUnknown resultType $ drop n argTypes
               ret =<< call delegateRef (map argReference (drop n args) ++ [frest])
 
           label "PartialClosure"
           -- ret =<< buildClosure tag fp (map argReference args)
           ret $ undef (repType resultType) -- TODO
 
+applyClosure :: Monad m => Name -> String -> Representation -> [Representation] -> Expression -> LLVMT m Expression
 applyClosure startLabel suffix resultType argTypes pclosure = do
   let suffixed name = mkName . pack $ name ++ suffix
   let (boxed, unboxed, unboxedType) = splitArgs $ map repType argTypes

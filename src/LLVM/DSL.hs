@@ -67,15 +67,15 @@ defineFunction :: Monad m => Name -> Linkage -> CallingConvention -> [Arg] -> Fu
 defineFunction name linkage cc args attrs definition =
   define =<< lift (functionDefinition name linkage cc args attrs definition)
 
-variableDefinition :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> m [Global]
-variableDefinition name linkage addr expr = do
+variableDefinition :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> Alignment -> m [Global]
+variableDefinition name linkage addr expr align = do
   (value, DSL defs blocks label statements _) <- runLLVMT expr
   unless (null blocks && isNothing label && null statements) $ error "variable definition must consist of a single expression"
-  pure $ defs ++ [VariableDefinition name linkage addr value (Alignment 0)]
+  pure $ defs ++ [VariableDefinition name linkage addr value align]
 
-defineVariable :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> LLVMT m Expression
-defineVariable name linkage addr definition =
-  define =<< lift (variableDefinition name linkage addr definition)
+defineVariable :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> Alignment -> LLVMT m Expression
+defineVariable name linkage addr definition align =
+  define =<< lift (variableDefinition name linkage addr definition align)
 
 alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m Expression
 alias name linkage addr value ty = define [Alias name linkage addr value ty]

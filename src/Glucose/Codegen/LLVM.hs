@@ -14,7 +14,7 @@ import Data.List
 import qualified Data.Set as Set
 import Data.Text (Text, pack)
 import Data.Traversable
-import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, defineFunction, alias, nameOf)
+import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, defineFunction, defineVariable, alias, nameOf)
 import Glucose.Codegen.Target
 import Glucose.Identifier
 import Glucose.IR.Checked as IR
@@ -42,11 +42,6 @@ codegenDefinitions = runCodegen . execLLVMT . mapM_ definition
 
 type LLVM a = LLVMT (NameGenT Codegen) a
 
-type Codegen = Writer (Set.Set GeneratedFn)
-
-runCodegen :: Codegen [LLVM.Global] -> [LLVM.Global]
-runCodegen a = let (defs, toGenerate) = runWriter a in defs ++ map generateFunction (Set.toList toGenerate)
-
 -- * Internals
 
 preamble :: [LLVM.Global]
@@ -66,9 +61,9 @@ definition (Definition (nameOf -> name) def) =
       let retTy = llvmType $ IR.typeOf (extract expr) & dataType %~ unboxed
       void $ defineFunction name External llvmArgs $
         ret =<< coerce retTy =<< expression (extract expr)
-    _ -> void $ defineVariable name External Unnamed $ expression (extract def)
+    _ -> void $ defineVariable name External $ expression (extract def)
 definition (Constructor (nameOf -> name) _ index) =
-  void $ defineVariable name External Unnamed (pure $ i32 index)
+  void $ defineVariable name External (pure $ i32 index)
 
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
@@ -115,11 +110,8 @@ partialApplication f (Partial n args) = -- TODO
   error $ "Partial application of " <> show (length args) <> " arguments to " <> show f <> " leaving arity " <> show n
 
 getApply :: ApplyType -> LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
-getApply applyType returnType argTypes = do
-  let genType = GeneratedApply . ApplyFn applyType (typeRep returnType)
-  let genTypes = map genType . tails $ map typeRep argTypes
-  tell . Set.fromList . tail $ reverse genTypes -- Each may need to delegate to those taking fewer args
-  pure $ LLVM.GlobalReference (generatedName $ head genTypes) (generatedType $ head genTypes)
+getApply applyType returnType argTypes = lift . lift .
+  generated . GeneratedApply $ ApplyFn applyType (typeRep returnType) (map typeRep argTypes)
 
 -- * Lambdas & Closures
 
