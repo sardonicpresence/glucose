@@ -59,12 +59,13 @@ asType (GlobalReference name refTy@(Ptr (Function _ args))) ty | ty == box && ca
 asType expr@(typeOf -> Ptr (Function _ args)) ty | ty == box = buildClosure (integer arity $ length args) expr []
 asType expr ty = bitcast expr ty
 
-getFunction, getUnbound, getPArgCount, getNPArgBytes, getPArgs :: Monad m => Expression -> LLVMT m Expression
+getFunction, getUnbound, getPArgCount, getNPArgBytes, getPArgs, getNPArgs :: Monad m => Expression -> LLVMT m Expression
 getFunction = flip getelementptr [i64 0, i32 0]
 getUnbound = flip getelementptr [i64 0, i32 1]
 getPArgCount = flip getelementptr [i64 0, i32 2]
 getNPArgBytes = flip getelementptr [i64 0, i32 3]
 getPArgs = flip getelementptr [i64 0, i32 4]
+getNPArgs = flip getelementptr [i64 0, i32 5]
 
 getPArg, getNPArg :: Monad m => Expression -> Int -> LLVMT m Expression
 getPArg p i = getelementptr p [i64 0, i32 4, integer arity i]
@@ -90,6 +91,32 @@ buildClosure narity f args = do
   store (sizeOf argsize $ Packed unboxedTypes) =<< getNPArgBytes pclosure
   ifor_ (map (args !!) boxed) $ \i arg -> store arg =<< getPArg pclosure i
   ifor_ (map (args !!) unboxed) $ \i arg -> store arg =<< getNPArg pclosure i
+  bitcast pclosure box
+
+extendClosure :: Monad m => Expression -> Expression -> [Expression] -> Expression -> Expression -> Expression -> Expression -> LLVMT m Expression
+extendClosure narity f args pargs pargCount npargs npargBytes = do
+  let (boxed, unboxed, Packed newUnboxedTypes) = splitArgs $ map typeOf args
+  let tyClosure = closureType (length boxed) []
+  -- comment $ "Build closure applying " ++ show (length unboxed) ++ " unboxed and "
+  --        ++ show (length boxed) ++ " boxed arguments to " ++ show f ++ " with arity " ++ show narity
+  pargBytes <- mulOp (sizeOf size box) =<< zext pargCount size
+  closureBytes <- join $ addOp <$> zext npargBytes size <*> addOp pargBytes (sizeOf size tyClosure)
+  pclosure <- flip bitcast (Ptr tyClosure) =<< heapAlloc closureBytes
+  join $ store <$> bitcast f (Ptr fn) <*> getFunction pclosure
+  nunbound <- flip subOp (integer arity $ length args) =<< zext narity arity
+  store nunbound =<< getUnbound pclosure
+  nboxed <- addOp pargCount (integer arity $ length boxed)
+  store nboxed =<< getPArgCount pclosure
+  join $ store <$> addOp npargBytes (sizeOf argsize $ Packed newUnboxedTypes) <*> getNPArgBytes pclosure
+  (\to -> memcpy to pargs pargBytes 16) =<< getPArgs pclosure
+  ifor_ (map (args !!) boxed) $ \i arg -> do
+    i' <- addOp pargCount $ integer arity i
+    store arg =<< getelementptr pclosure [i64 0, i32 4, i']
+  pnp <- getelementptr pclosure [i64 0, i32 4, nboxed]
+  memcpy pnp npargs npargBytes 16
+  npargBytes' <- zext npargBytes size
+  pnp' <- flip inttoptr (Ptr $ Packed newUnboxedTypes) =<< addOp npargBytes' =<< ptrtoint pnp size
+  ifor_ (map (args !!) unboxed) $ \i arg -> store arg =<< getelementptr pnp' [i64 0, i32 i]
   bitcast pclosure box
 
 
@@ -126,7 +153,8 @@ memcpy :: Monad m => Expression -> Expression -> Expression -> Int -> LLVMT m ()
 memcpy to from bytes align = do
   to' <- bitcast to (Ptr $ I 8)
   from' <- bitcast from (Ptr $ I 8)
-  call_ (globalRef _memcpy) [to', from', bytes, i32 align, i1 False]
+  bytes' <- zext bytes size
+  call_ (globalRef _memcpy) [to', from', bytes', i32 align, i1 False]
 
 -- * Utilities
 
@@ -273,8 +301,10 @@ generateFunction = \case
               ret =<< call delegateRef (map argReference (drop n args) ++ [frest])
 
           label "PartialClosure"
-          -- ret =<< buildClosure tag fp (map argReference args)
-          ret $ undef (repType resultType) -- TODO
+          pargs <- getPArgs pclosure
+          npargs <- getNPArgs pclosure
+          ret =<< extendClosure nunbound pfn (map argReference args) pargs nboxed npargs unboxedArgSize
+          -- ret $ undef (repType resultType) -- TODO
 
 applyClosure :: Monad m => Name -> String -> Representation -> [Representation] -> Expression -> LLVMT m Expression
 applyClosure startLabel suffix resultType argTypes pclosure = do

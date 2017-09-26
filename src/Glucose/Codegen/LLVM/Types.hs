@@ -79,7 +79,7 @@ rtTypeRep Closure = closureType 0 []
   }
 -}
 closureType :: Int -> [Type] -> Type
-closureType n [] = Struct [Ptr fn, arity, arity, argsize, Array n box]
+-- closureType n [] = Struct [Ptr fn, arity, arity, argsize, Array n box]
 closureType n args = Struct [Ptr fn, arity, arity, argsize, Array n box, Packed args]
 
 rtType :: RTType -> Type
