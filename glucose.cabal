@@ -40,7 +40,10 @@ library
                      , Glucose.Codegen
                      , Glucose.Codegen.JavaScript
                      , Glucose.Codegen.LLVM
+                     , Glucose.Codegen.LLVM.Closure
                      , Glucose.Codegen.LLVM.DSL
+                     , Glucose.Codegen.LLVM.Execution
+                     , Glucose.Codegen.LLVM.Name
                      , Glucose.Codegen.LLVM.NameGen
                      , Glucose.Codegen.LLVM.RT
                      , Glucose.Codegen.LLVM.Types

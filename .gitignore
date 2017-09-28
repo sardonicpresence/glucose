@@ -3,6 +3,7 @@ dist-*
 cabal-dev
 *.exe
 *.exe.manifest
+*.pdb
 *.o
 *.bc
 *.s

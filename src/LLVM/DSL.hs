@@ -57,11 +57,7 @@ functionDefinition name linkage cc args attrs def = do
   pure $ defs ++ [FunctionDefinition name linkage cc (map pure args) attrs (pure blocks)]
 
 singleFunctionDefinition :: Monad m => Name -> Linkage -> CallingConvention -> [Arg] -> FunctionAttributes -> LLVMT m () -> m Global
-singleFunctionDefinition name linkage cc args attrs def = do
-  defs <- functionDefinition name linkage cc args attrs def
-  case defs of
-    [def] -> pure def
-    _ -> error "function definition cannot contain other globals"
+singleFunctionDefinition name linkage cc args attrs def = single "function definition" =<< functionDefinition name linkage cc args attrs def
 
 defineFunction :: Monad m => Name -> Linkage -> CallingConvention -> [Arg] -> FunctionAttributes -> LLVMT m () -> LLVMT m Expression
 defineFunction name linkage cc args attrs definition =
@@ -73,9 +69,16 @@ variableDefinition name linkage addr expr align = do
   unless (null blocks && isNothing label && null statements) $ error "variable definition must consist of a single expression"
   pure $ defs ++ [VariableDefinition name linkage addr value align]
 
+singleVariableDefinition :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> Alignment -> m Global
+singleVariableDefinition name linkage addr expr align = single "variable definition" =<< variableDefinition name linkage addr expr align
+
 defineVariable :: Monad m => Name -> Linkage -> UnnamedAddr -> LLVMT m Expression -> Alignment -> LLVMT m Expression
 defineVariable name linkage addr definition align =
   define =<< lift (variableDefinition name linkage addr definition align)
+
+single :: Applicative f => String -> [a] -> f a
+single _ [def] = pure def
+single description _ = error $ description ++ " cannot contain other globals"
 
 alias :: Monad m => Name -> Linkage -> UnnamedAddr -> Expression -> Type -> LLVMT m Expression
 alias name linkage addr value ty = define [Alias name linkage addr value ty]
@@ -132,6 +135,8 @@ zext' = convert' Zext
 
 convert' :: ConversionOp -> Expression -> Type -> Expression
 convert' _ a ty | typeOf a == ty = a
+convert' IntToPtr (ConstConvert Bitcast a _) ty = ConstConvert IntToPtr a ty
+-- TODO: fold other cases?
 convert' op a ty = ConstConvert op a ty
 
 alloca :: Monad m => Type -> Expression -> LLVMT m Expression
@@ -250,11 +255,14 @@ integer ty value = let (name, ty', value') = go ty value in Literal $ IntegerLit
   go (Custom name ty) value = go ty value & _1 .~ Just name
   go ty _ = error $ "not a valid type for an integer literal: " ++ show ty
 
-float ::  Real a => Type -> a -> Expression
+float :: Real a => Type -> a -> Expression
 float ty value = let (name, value') = go ty value in Literal $ FloatLiteral name value' where
   go F64 value = (Nothing, fromRational $ toRational value)
   go (Custom name ty) value = go ty value & _1 .~ Just name
   go ty _ = error $ "not a valid type for a floating-point literal: " ++ show ty
+
+string :: String -> Expression
+string = Literal . StringLiteral
 
 undef :: Type -> Expression
 undef = Undefined

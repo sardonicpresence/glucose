@@ -1,7 +1,7 @@
 module Glucose.Codegen.LLVM.Types
 (
-  Representation(..), typeRep, repType, functionType,
-  argAlign,
+  Representation(..), typeRep, repType, valueType, functionType,
+  argAlign, alignment,
   boxed, box, fn, size, arity, argsize, closure,
   closureType, rtName, typeDeclarations
 ) where
@@ -28,11 +28,16 @@ repType I32Rep = I 32
 repType F64Rep = F64
 repType BoxRep = box
 
+valueType :: Type -> Type
+valueType = repType . typeRep
+
 functionType :: Representation -> [Representation] -> Type
 functionType result args = Ptr $ Function (repType result) (map repType args)
 
 
 
+alignment :: Int
+alignment = 16
 
 -- | Alignment of the first applied argument in a closure.
 argAlign :: Int

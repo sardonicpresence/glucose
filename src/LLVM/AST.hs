@@ -2,6 +2,8 @@ module LLVM.AST where
 
 import Control.Comonad
 import Control.Lens
+import Data.Bits
+import Data.Char
 import Data.List
 import Data.Maybe
 import LLVM.Name
@@ -11,11 +13,13 @@ data Module = Module Target [Global] deriving (Eq)
 -- TODO: split things without types e.g. TypeDef & AttributeGroup into different type
 data Global = VariableDefinition Name Linkage UnnamedAddr Expression Alignment
             | Alias Name Linkage UnnamedAddr Expression Type
-            | FunctionDefinition Name Linkage CallingConvention [Parameter Arg] FunctionAttributes (Parameter [BasicBlock])
+            | FunctionDefinition Name Linkage CallingConvention [Parameter Arg] FunctionAttributes (Result [BasicBlock])
             | TypeDef Name Type
-            | FunctionDeclaration Name Linkage CallingConvention (Parameter Type) [Parameter Type] FunctionAttributes
+            | FunctionDeclaration Name Linkage CallingConvention (Result Type) [Parameter Type] FunctionAttributes
             | AttributeGroup Int [String]
   deriving (Eq)
+
+data Result a = Result [String] Alignment a deriving (Eq, Functor)
 
 data Parameter a = Parameter [String] Alignment a deriving (Eq, Functor)
 
@@ -63,6 +67,7 @@ data Arg = Arg Name Type deriving (Eq)
 data Literal = IntegerLiteral (Maybe Name) Int Integer
              | FloatLiteral (Maybe Name) Double
              | ZeroInitializer Type
+             | StringLiteral String
   deriving (Eq)
 
 data Type = Void | I Int | F64 | Ptr Type | Function Type [Type] | Custom Name Type | Opaque
@@ -142,7 +147,10 @@ instance Show Global where
     "attributes #" ++ show n ++ " = { " ++ unwords attrs ++ " }"
 
 instance Show a => Show (Parameter a) where
-  show (Parameter attrs alignment a) = concatMap (++ " ") attrs ++ withSpaceAfter alignment ++ show a
+  show (Parameter attrs alignment a) = show a ++ concatMap (" " ++) attrs ++ withSpace alignment
+
+instance Show a => Show (Result a) where
+  show (Result attrs alignment a) = concatMap (++ " ") attrs ++ withSpaceAfter alignment ++ show a
 
 instance Show FunctionAttributes where
   show (FunctionAttributes addr attrs groups alignment) =
@@ -243,6 +251,9 @@ instance Show Literal where
   show (IntegerLiteral _ _ n) = show n
   show (FloatLiteral _ n) = show n
   show (ZeroInitializer _) = "zeroinitializer"
+  show (StringLiteral s) = "c\"" ++ concatMap mangleChar s ++ "\"" where
+    mangleChar c = if isControl c then "\\" ++ hex (ord c) else [c]
+    hex c = map toUpper [intToDigit (shift c (-8)), intToDigit (c .&. 0xF)]
 
 instance Show Type where
   show Void = "void"
@@ -315,12 +326,15 @@ instance Typed Type where
   typeOf = id
 
 instance Typed Global where
-  typeOf (VariableDefinition _ _ _ expr _) = typeOf expr
+  typeOf (VariableDefinition _ _ _ expr _) = Ptr $ typeOf expr
   typeOf (Alias _ _ _ _ ty) = Ptr ty
   typeOf (FunctionDefinition _ _ _ args _ blocks) = Ptr $ Function (defReturnType $ extract blocks) $ map typeOf args
   typeOf TypeDef{} = undefined
   typeOf (FunctionDeclaration _ _ _ result args _) = Ptr $ Function (typeOf result) (map typeOf args)
   typeOf AttributeGroup{} = undefined
+
+instance Typed a => Typed (Result a) where
+  typeOf (Result _ _ a)= typeOf a
 
 instance Typed a => Typed (Parameter a) where
   typeOf (Parameter _ _ a)= typeOf a
@@ -371,6 +385,7 @@ instance Typed Literal where
   typeOf (IntegerLiteral name bits _) = maybe (I bits) (flip Custom $ I bits) name
   typeOf (FloatLiteral name _) = maybe F64 (flip Custom F64) name
   typeOf (ZeroInitializer ty) = ty
+  typeOf (StringLiteral s) = Array (length s) (I 8)
 
 withType :: (Typed a, Show a) => a -> String
 withType a = show (typeOf a) ++ " " ++ show a
@@ -435,6 +450,14 @@ globalRef a = GlobalReference (nameOf a) (typeOf a)
 
 
 -- * Misc
+
+instance Comonad Result where
+  extract (Result _ _ a) = a
+  duplicate a@(Result attrs alignment _) = Result attrs alignment a
+
+instance Applicative Result where
+  pure = Result [] (Alignment 0)
+  (<*>) = error "Result is not really Applicative!"
 
 instance Comonad Parameter where
   extract (Parameter _ _ a) = a

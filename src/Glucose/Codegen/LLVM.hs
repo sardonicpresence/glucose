@@ -1,9 +1,5 @@
 module Glucose.Codegen.LLVM (codegen, codegenModuleDefinitions, codegenModule, codegenDefinitions, llvmType) where
 
-import Glucose.Codegen.LLVM.NameGen
-import Glucose.Codegen.LLVM.RT
-import Glucose.Codegen.LLVM.Types
-
 import Control.Comonad
 import Control.Lens.Operators
 import Control.Monad.Trans (lift)
@@ -14,7 +10,12 @@ import Data.List
 import qualified Data.Set as Set
 import Data.Text (Text, pack)
 import Data.Traversable
-import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, defineFunction, defineVariable, alias, nameOf)
+import Glucose.Codegen.LLVM.Closure (buildClosure, splitArgs)
+import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, nameOf)
+import Glucose.Codegen.LLVM.NameGen
+import Glucose.Codegen.LLVM.Execution
+import Glucose.Codegen.LLVM.RT
+import Glucose.Codegen.LLVM.Types
 import Glucose.Codegen.Target
 import Glucose.Identifier
 import Glucose.IR.Checked as IR
@@ -144,10 +145,10 @@ defineSlowWrapper _ = error "Can only define wrappers for global functions!"
 -- * Casts & Conversions
 
 coerce :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
-coerce (valueType -> ty) arg = case LLVM.typeOf arg of
+coerce ty arg = case LLVM.typeOf arg of
   tyArg | sameRepresentation ty tyArg -> arg `asType` ty
-        | sameRepresentation (Ptr ty) tyArg -> load =<< arg `asType` Ptr ty
-        | sameRepresentation ty (Ptr tyArg) -> flip bitcast ty =<< boxValue arg
+        | sameRepresentation (Ptr (valueType ty)) tyArg -> load =<< bitcast arg (Ptr $ valueType ty)
+        | sameRepresentation ty (Ptr tyArg) -> flip bitcast (valueType ty) =<< boxValue arg
         | otherwise -> error $ "Cannot apply expression of type " ++ show tyArg ++ " as argument of type " ++ show ty
 
 -- TODO: another case of `asType`?
@@ -172,9 +173,6 @@ llvmType (Type (Checked ty)) = case ty of
       then LLVM.Function box [from]
       else LLVM.Function f (from : as)
     f -> LLVM.Function f [from]
-
-valueType :: LLVM.Type -> LLVM.Type
-valueType = repType . typeRep
 
 -- * Utilities
 

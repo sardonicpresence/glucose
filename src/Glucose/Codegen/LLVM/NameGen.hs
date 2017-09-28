@@ -5,7 +5,7 @@ import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import LLVM.Name
+import Glucose.Codegen.LLVM.Name
 
 newtype NameGenT m a = NameGenT (ReaderT Name (StateT Int m) a)
   deriving (Functor, Applicative, Monad)
