@@ -57,8 +57,8 @@ data Requisite = RequiredConstant Text Expression | GeneratedApply ApplyFn
 instance Ord Requisite where
   RequiredConstant a _ <= RequiredConstant b _ = a <= b
   GeneratedApply a <= GeneratedApply b = a <= b
-  RequiredConstant{} <= GeneratedApply{} = True
-  GeneratedApply{} <= RequiredConstant{} = False
+  RequiredConstant{} <= GeneratedApply{} = False
+  GeneratedApply{} <= RequiredConstant{} = True
 
 data ApplyFn = ApplyFn ApplyType Representation [Representation]
   deriving (Eq, Ord)

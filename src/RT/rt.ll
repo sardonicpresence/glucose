@@ -43,7 +43,7 @@ define void @_start() unnamed_addr norecurse noreturn {
   ret void
 }
 
-define fastcc i32 @strlen([0 x i8]* nonnull %s) unnamed_addr #0 norecurse {
+define fastcc i32 @$strlen([0 x i8]* nonnull %s) unnamed_addr #0 norecurse {
   br label %Loop
 Loop:
   %1 = phi i32 [0, %0], [%5, %Loop]
@@ -60,7 +60,7 @@ define fastcc void @$abort([0 x i8]* nonnull %message) unnamed_addr #0 norecurse
   %1 = load i32, i32* @STD_ERROR_HANDLE
   %2 = call x86_stdcallcc i8* @GetStdHandle(i32 %1)
   %3 = getelementptr inbounds [0 x i8], [0 x i8]* %message, i64 0, i64 0
-  %4 = call fastcc i32 @strlen([0 x i8]* %message)
+  %4 = call fastcc i32 @$strlen([0 x i8]* %message)
   call x86_stdcallcc i1 @WriteFile(i8* %2, i8* %3, i32 %4, i32* null, i8* null)
   tail call x86_stdcallcc void @ExitProcess(i32 1)
   ret void
@@ -72,24 +72,6 @@ define fastcc nonnull noalias align 8 %$box* @$heapAlloc(%$size %bytes) unnamed_
   %3 = call x86_stdcallcc i8* @VirtualAlloc(i8* null, %$size %bytes, i32 %1, i32 %2)
   %4 = bitcast i8* %3 to %$box*
   ret %$box* %4
-}
-
-; TODO: Consider taking advantage of alignment somehow
-; TODO: Based solely on name, LLVM refuses to eliminate this function if unused!
-define fastcc void @memcpy(i8* %to, i8* %from, %$size %bytes) unnamed_addr #0 {
-  %1 = icmp eq %$size %bytes, 0
-  br i1 %1, label %Done, label %Loop
-Loop:
-  %2 = phi %$size [0, %0], [%6, %Loop]
-  %3 = getelementptr inbounds i8, i8* %from, %$size %2
-  %4 = load i8, i8* %3
-  %5 = getelementptr inbounds i8, i8* %to, %$size %2
-  store i8 %4, i8* %5
-  %6 = add %$size %2, 1
-  %7 = icmp eq %$size %6, %bytes
-  br i1 %7, label %Done, label %Loop
-Done:
-  ret void
 }
 
 attributes #0 = { nounwind align=16 }
