@@ -239,8 +239,9 @@ zeroinitializer = Literal . ZeroInitializer
 i1 :: Bool -> Expression
 i1 a = integer (I 1) $ if a then 1 else 0
 
-i4, i32 :: Int -> Expression
+i4, i8, i32 :: Int -> Expression
 i4 = integer (I 4)
+i8 = integer (I 8)
 i32 = integer (I 32)
 
 i64 :: Integral a => a -> Expression

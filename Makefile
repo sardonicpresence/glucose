@@ -9,7 +9,7 @@ default : example.js example.exe
 # %.exe : %.o src\RT\rt.o
 # 	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
 
-%.exe : %.bc src/RT/rt.bc src/RT/builtins.o
+%.exe : %.bc src/RT/rt.bc src/RT/builtins.o src/RT/alloc.o
 	$(LLVM)lld-link $^ /subsystem:windows /entry:_start /out:$@ /debug /defaultlib:kernel32 /mllvm:-mcpu=broadwell
 
 %.o : %.s

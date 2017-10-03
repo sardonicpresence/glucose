@@ -15,7 +15,7 @@ _abort = FunctionDeclaration (builtinName "abort") External callingConvention re
 _heapAlloc :: Global
 _heapAlloc = FunctionDeclaration (builtinName "heapAlloc") External callingConvention result args attrs where
   result = Result ["nonnull", "noalias"] (Alignment 16) box
-  args = [Parameter [] (Alignment 0) size]
+  args = [Parameter [] (Alignment 0) size, Parameter [] (Alignment 0) (I 8)]
   attrs = FunctionAttributes Unnamed ["allocsize(0)"] [0] (Alignment alignment)
 
 _memcpy :: Global
@@ -37,7 +37,7 @@ heapAllocType :: Monad m => Type -> LLVMT m Expression
 heapAllocType ty = flip bitcast (Ptr ty) =<< heapAlloc (sizeOf size ty)
 
 heapAlloc :: Monad m => Expression -> LLVMT m Expression
-heapAlloc bytes = call (globalRef _heapAlloc) [bytes]
+heapAlloc bytes = call (globalRef _heapAlloc) [bytes, i8 16]
 
 heapAllocN :: Monad m => Int -> LLVMT m Expression
 heapAllocN = heapAlloc . integer size

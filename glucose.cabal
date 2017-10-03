@@ -117,6 +117,7 @@ test-suite glucose-test
                      , Glucose.TypeChecker.UnifySpec
                      , Glucose.Codegen.JavaScriptSpec
                      , Glucose.Codegen.LLVMSpec
+                     , Glucose.Codegen.LLVM.ExecutionSpec
                      , Glucose.Test.AST
                      , Glucose.Test.Identifier
                      , Glucose.Test.IR
@@ -126,8 +127,9 @@ test-suite glucose-test
                      , Glucose.Test.IR.Unchecked
                      , Glucose.Test.Lexer
                      , Glucose.Test.Source
-                     , Test.Utils
                      , Test.Prelude
+                     , Test.Utils
+                     , Test.Executable
   build-depends:       base
                      , glucose
                      , text
@@ -136,6 +138,7 @@ test-suite glucose-test
                      , lens
                      , hspec
                      , QuickCheck
+                     , process
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-extensions:  OverloadedStrings
                      , FlexibleInstances

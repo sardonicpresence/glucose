@@ -20,12 +20,6 @@ target triple = "x86_64-pc-windows"
   <{}> ; Variable number of bound non-pointer arguments
 }
 
-@MEM_COMMIT = private unnamed_addr constant i32 4096
-@MEM_RESERVE = private unnamed_addr constant i32 8192
-@MEM_RESERVE_COMMIT = private unnamed_addr constant i32 12288
-@MEM_READWRITE = private unnamed_addr constant i32 4
-declare dllimport x86_stdcallcc i8* @VirtualAlloc(i8*, i64, i32, i32)
-
 declare dllimport x86_stdcallcc void @ExitProcess(i32) nounwind noreturn
 
 @STD_INPUT_HANDLE = private unnamed_addr constant i32 -10
@@ -35,9 +29,12 @@ declare dllimport x86_stdcallcc i8* @GetStdHandle(i32)
 
 declare dllimport x86_stdcallcc i1 @WriteFile(i8* nonnull, i8* nonnull, i32, i32*, i8*)
 
+declare fastcc void @$initAlloc(%$size %nurseryBytes) unnamed_addr #0
+
 declare fastcc i32 @main(%$box) unnamed_addr #0
 
 define void @_start() unnamed_addr norecurse noreturn {
+  tail call fastcc void @$initAlloc(%$size 262144)
   %1 = call fastcc i32 @main(%$box null)
   tail call x86_stdcallcc void @ExitProcess(i32 %1)
   ret void
@@ -64,14 +61,6 @@ define fastcc void @$abort([0 x i8]* nonnull %message) unnamed_addr #0 norecurse
   call x86_stdcallcc i1 @WriteFile(i8* %2, i8* %3, i32 %4, i32* null, i8* null)
   tail call x86_stdcallcc void @ExitProcess(i32 1)
   ret void
-}
-
-define fastcc nonnull noalias align 8 %$box* @$heapAlloc(%$size %bytes) unnamed_addr #0 allocsize(0) {
-  %1 = load i32, i32* @MEM_RESERVE_COMMIT
-  %2 = load i32, i32* @MEM_READWRITE
-  %3 = call x86_stdcallcc i8* @VirtualAlloc(i8* null, %$size %bytes, i32 %1, i32 %2)
-  %4 = bitcast i8* %3 to %$box*
-  ret %$box* %4
 }
 
 attributes #0 = { nounwind align=16 }
