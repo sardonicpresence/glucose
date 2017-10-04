@@ -45,8 +45,8 @@ definition = do
 
 typeDefinition :: Source f => ParseCompound f AST.Definition
 typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors where
-  name = duplicate <$> identifier <* operator Assign
-  constructors = traverse1 duplicate <$> identifier `separatedBy` operator Bar
+  name = duplicate <$> identifier
+  constructors = optionalList $ operator Assign *> (traverse1 duplicate <$> identifier `separatedBy` operator Bar)
 
 expression :: Source f => ParseCompound f AST.Expression
 expression = buildExpression <$> some value where
@@ -117,3 +117,6 @@ is a = preview $ a . like ()
 maybeApply :: (Applicative f, Comonad f) => f (Maybe (f a) -> b) -> Maybe (f a) -> f b
 maybeApply f Nothing = ($ Nothing) <$> f
 maybeApply f (Just a) = f <*> (Just <$> duplicate a)
+
+optionalList :: (Alternative f, Applicative g, Alternative t) => f (g (t a)) -> f (g (t a))
+optionalList = (fromMaybe (pure empty) <$>) . optional

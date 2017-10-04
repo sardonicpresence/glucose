@@ -17,6 +17,8 @@ type other
 Bar =
  foo
 
+type Empty
+
 three = \a -> 3
 id = \a -> a
 const = \ a b -> a
