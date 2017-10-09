@@ -67,18 +67,23 @@ typeCheckExpression expr = for expr $ \case
   Reference _ identifier _ -> do
     referenced <- uses namespace $ fmap snd . lookupVariable identifier
     maybe (typeCheckIdentifier $ identifier <$ expr) referenceVariable referenced
-  Lambda args def -> do
-    pushArgs =<< traverse (traverse typeCheckArg) args
-    typeCheckedExpr <- typeCheckExpression def
-    typeCheckedArgs <- popArgs
-    pure $ Lambda typeCheckedArgs typeCheckedExpr
+  Lambda arg def -> do
+    pushArgs . pure =<< traverse typeCheckArg arg
+    typeCheckedExpr <- notLambda =<< typeCheckExpression def
+    [typeCheckedArg] <- popArgs
+    pure $ Lambda typeCheckedArg typeCheckedExpr
   Apply expr arg ty -> do
-    expr' <- typeCheckExpression expr
-    arg' <- typeCheckExpression arg
+    expr' <- notLambda =<< typeCheckExpression expr
+    arg' <- notLambda =<< typeCheckExpression arg
     ty' <- checkingType newVar ty
     unifier <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
     namespace . declaredArgs . traversed . argType %= unifier
     pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
+
+notLambda :: f (Expression Checking f) -> TypeCheck f m (f (Expression Checking f))
+notLambda expr = case extract expr of
+  Lambda{} -> throwError (LocalLambda $ void expr)
+  _ -> pure expr
 
 functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
 functionReturning returnType argType = dataType # Function UnknownArity argType returnType

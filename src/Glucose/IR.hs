@@ -26,7 +26,7 @@ deriving instance (Eq (f Identifier), Eq (f (Expression ann f))) => Eq (Definiti
 data Expression ann f
   = Literal Literal
   | Reference (Ref ann) Identifier (Type ann)
-  | Lambda [f (Arg ann)] (f (Expression ann f))
+  | Lambda (f (Arg ann)) (f (Expression ann f))
   | Apply (f (Expression ann f)) (f (Expression ann f)) (Type ann)
 deriving instance (Eq (Type ann), Eq (Ref ann), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
 
@@ -183,7 +183,7 @@ instance (Comonad f, Annotations ann) => Show (Definition ann f) where
 instance (Comonad f, Annotations ann) => Show (Expression ann f) where
   show (Literal lit) = show lit
   show (Reference kind name ty) = showRef kind name `withType` ty
-  show (Lambda args value) = "\\" ++ unwords (map (show . extract) args) ++ " -> " ++ show (extract value)
+  show (Lambda arg value) = "\\" ++ show (extract arg) ++ " -> " ++ show (extract value)
   show (Apply expr arg ty) = "((" ++ show (extract expr) ++ ") (" ++ show (extract arg) ++ "))" `withType` ty
 
 instance Annotations ann => Show (Arg ann) where
@@ -220,7 +220,7 @@ instance (Comonad f, Annotations ann) => Typed ann (Expression ann f) where
   typeOf (Literal (IntegerLiteral _)) = dataType # Unboxed Integer
   typeOf (Literal (FloatLiteral _)) = dataType # Unboxed Float
   typeOf (Reference _ _ ty) = ty
-  typeOf (Lambda args expr) = go (length args) args where
+  typeOf (Lambda (pure -> args) expr) = go (length args) args where
     go _ [] = typeOf (extract expr) & dataType %~ unboxed
     go m (a:as) = dataType # Function (Arity m) (typeOf $ extract a) (go (m-1) as)
   typeOf (Apply _ _ ty) = ty
@@ -234,7 +234,7 @@ typeAnnotations :: (Traversable f, Ref from ~ Ref to)
 typeAnnotations f = \case
   Literal lit -> pure $ Literal lit
   Reference kind name ty -> Reference kind name <$> f ty
-  Lambda args expr -> Lambda <$> traverse (traverse $ argType f) args <*> traverse (typeAnnotations f) expr where
+  Lambda arg expr -> Lambda <$> traverse (argType f) arg <*> traverse (typeAnnotations f) expr where
     argType f (Arg name ty) = Arg name <$> f ty
   Apply fun arg ty -> Apply <$> traverse (typeAnnotations f) fun <*> traverse (typeAnnotations f) arg <*> f ty
 

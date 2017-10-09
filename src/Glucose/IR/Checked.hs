@@ -67,7 +67,7 @@ groupApplication ty = go ty [] where
 captures :: Comonad f => Expression f -> Set.Set Arg
 captures (Reference Local name ty) = Set.singleton $ Arg name ty
 captures (Apply expr arg _) = captures (extract expr) <> captures (extract arg)
-captures (Lambda args value) = captures (extract value) Set.\\ Set.fromList (map extract args)
+captures (Lambda arg value) = captures (extract value) Set.\\ Set.fromList [extract arg]
 captures _ = mempty
 
 effectiveArity :: Type -> Int

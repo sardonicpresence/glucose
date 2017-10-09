@@ -2,19 +2,11 @@ module Glucose.Codegen.LLVM (codegen, codegenModuleDefinitions, codegenModule, c
 
 import Control.Comonad
 import Control.Lens.Operators
-import Control.Monad.Trans (lift)
-import Control.Monad.Writer
+import Control.Monad.Identity
 import Data.Foldable
-import Data.Function
-import Data.List
-import qualified Data.Set as Set
 import Data.Text (Text, pack)
-import Data.Traversable
-import Glucose.Codegen.LLVM.Closure (buildClosure, splitArgs)
 import Glucose.Codegen.LLVM.DSL as LLVM hiding (LLVM, Target, nameOf)
 import Glucose.Codegen.LLVM.NameGen
-import Glucose.Codegen.LLVM.Execution
-import Glucose.Codegen.LLVM.RT
 import Glucose.Codegen.LLVM.Types
 import Glucose.Codegen.Target
 import Glucose.Identifier
@@ -34,31 +26,28 @@ codegenModuleDefinitions (IR.Module defs) = pack . concatMap show . codegenDefin
 codegenModule :: Comonad f => Target -> IR.Module f -> LLVM.Module
 codegenModule (llvmTarget -> target) = \case
   IR.Module [] -> LLVM.Module target []
-  IR.Module defs -> LLVM.Module target $ preamble ++ codegenDefinitions (map extract defs) ++ postamble
+  IR.Module defs -> LLVM.Module target $ preamble ++ codegenDefinitions (map extract defs)
 
 codegenDefinitions :: Comonad f => [IR.Definition f] -> [LLVM.Global]
-codegenDefinitions = runCodegen . execLLVMT . mapM_ definition
+codegenDefinitions = execLLVM . mapM_ definition
 
 -- * Codegen monad
 
-type LLVM a = LLVMT (NameGenT Codegen) a
+type LLVM a = LLVMT NameGen a
 
 -- * Internals
 
 preamble :: [LLVM.Global]
 preamble = typeDeclarations
 
-postamble :: [LLVM.Global]
-postamble = functionDeclarations ++ attributeGroups
-
-definition :: Comonad f => Definition f -> LLVMT Codegen ()
+definition :: Comonad f => Definition f -> LLVMT Identity ()
 definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
     Reference Global to (llvmType -> ty) -> do
       let tyPtr = case ty of Ptr t -> t; _ -> ty
       void $ alias name External Unnamed (GlobalReference (nameOf to) tyPtr) tyPtr
-    Lambda args expr -> do
-      let llvmArgs = map (argument . extract) args
+    Lambda arg expr -> do
+      let llvmArgs = map (argument . extract) [arg]
       let retTy = llvmType $ IR.typeOf (extract expr) & dataType %~ unboxed
       void $ defineFunction name External llvmArgs $
         ret =<< coerce retTy =<< expression (extract expr)
@@ -72,8 +61,7 @@ expression (Reference Local (nameOf -> name) ty) = pure $ LLVM.LocalReference na
 expression (Reference Global (nameOf -> name) ty) = case ty of
   CheckedType IR.Function{} -> pure $ LLVM.GlobalReference name (llvmType ty)
   _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
-expression (Lambda (map extract -> args) (extract -> def)) = withNewGlobal $ \name ->
-  buildLambda name Private args def
+expression Lambda{} = error "Non-top-level lambda expression in codegen!"
 expression (Apply (extract -> f) (extract -> x) retTy) = do
   let (root, args) = flatten f x
   let (Application result calls partial) = groupApplication (IR.typeOf root) args
@@ -95,70 +83,20 @@ fullApplication :: Comonad f => LLVM.Expression -> LLVM.Type -> Call (IR.Express
 fullApplication f retType args = do
   let prepareArg (ty, arg) = coerce (llvmType ty) =<< expression arg
   preparedArgs <- traverse prepareArg args
-  case LLVM.typeOf f of
-    Ptr LLVM.Function{} -> do
-      comment $ "Call function " ++ show f ++ " of known arity " ++ show (length args)
-      LLVM.call f preparedArgs
-    _ -> do
-      comment $ "Call unknown function " ++ show f
-      let argTypes = map (llvmType . fst) args
-      fnApply <- getApply ApplyUnknown retType argTypes
-      result <- LLVM.call fnApply $ preparedArgs ++ [f]
-      coerce retType result
+  coerce retType =<< LLVM.call f preparedArgs
 
-partialApplication :: LLVM.Expression -> Partial f -> LLVM LLVM.Expression
-partialApplication f (Partial n args) = -- TODO
-  error $ "Partial application of " <> show (length args) <> " arguments to " <> show f <> " leaving arity " <> show n
-
-getApply :: ApplyType -> LLVM.Type -> [LLVM.Type] -> LLVM LLVM.Expression
-getApply applyType returnType argTypes = lift . lift .
-  generated . GeneratedApply $ ApplyFn applyType (typeRep returnType) (map typeRep argTypes)
-
--- * Lambdas & Closures
-
-buildLambda :: Comonad f => Name -> Linkage -> [IR.Arg] -> IR.Expression f -> LLVM LLVM.Expression
-buildLambda name linkage args def = do
-  let captured = map argument $ Set.toList (captures def) \\ args
-  let fnArgs = captured ++ map argument args
-  lambda <- defineFunction name linkage fnArgs $ ret =<< expression def
-  if null captured
-    then pure lambda
-    else do
-      slow <- defineSlowWrapper lambda -- TODO: don't wrap the tagged alias!!!
-      buildClosure (integer arity $ length fnArgs) slow $ map argReference captured
-
-defineSlowWrapper :: LLVM.Expression -> LLVM LLVM.Expression
-defineSlowWrapper fn@(GlobalReference name (Ptr (LLVM.Function _ argTypes))) = do
-  let pargs = LLVM.Arg (mkName "args") (Ptr box)
-  defineFunction (slowName name) External [pargs] $ do -- TODO: Could this be private?
-    let (boxed, unboxed, unboxedType) = splitArgs argTypes
-    let argsType = Struct [Array (length boxed) box, unboxedType]
-    pargs' <- bitcast (argReference pargs) (Ptr argsType)
-    argsBoxed <- for [0..length boxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 0, integer arity i]
-    argsUnboxed <- for [0..length unboxed - 1] $ \i -> load =<< getelementptr pargs' [i64 0, i32 1, i32 i]
-    let args = map snd . sortBy (compare `on` fst) $ zip boxed argsBoxed ++ zip unboxed argsUnboxed
-    target <- flip inttoptr (LLVM.typeOf fn) =<< snd <$> untag fn -- TODO: shouldn't be required
-    ret =<< call target args
-defineSlowWrapper _ = error "Can only define wrappers for global functions!"
-
+partialApplication = error "Partial application in codegen!"
 
 -- * Casts & Conversions
 
 coerce :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
-coerce ty arg = case LLVM.typeOf arg of
-  tyArg | sameRepresentation ty tyArg -> arg `asType` ty
-        | sameRepresentation (Ptr (valueType ty)) tyArg -> load =<< bitcast arg (Ptr $ valueType ty)
-        | sameRepresentation ty (Ptr tyArg) -> flip bitcast (valueType ty) =<< boxValue arg
-        | otherwise -> error $ "Cannot apply expression of type " ++ show tyArg ++ " as argument of type " ++ show ty
-
--- TODO: another case of `asType`?
-boxValue :: LLVM.Expression -> LLVM LLVM.Expression
-boxValue expr = do
-  comment $ "Box " ++ show expr
-  let ty = LLVM.typeOf expr
-  box <- heapAllocType ty
-  store expr box
-  pure box
+coerce ty val = case (typeRep $ LLVM.typeOf val, typeRep ty) of
+  (I32Rep, BoxRep) -> inttoptr val ty
+  (F64Rep, BoxRep) -> flip inttoptr ty =<< bitcast val size
+  (BoxRep, I32Rep) -> ptrtoint val ty
+  (BoxRep, F64Rep) -> flip bitcast ty =<< ptrtoint val size
+  (from, to) | from == to -> bitcast val ty
+  _ -> error $ "Invalid cast from " ++ show val ++ " to " ++ show ty
 
 llvmType :: IR.Type -> LLVM.Type
 llvmType (Type (Checked ty)) = case ty of
@@ -175,12 +113,6 @@ llvmType (Type (Checked ty)) = case ty of
     f -> LLVM.Function f [from]
 
 -- * Utilities
-
-withNewGlobal :: (Name -> LLVM a) -> LLVM a
-withNewGlobal f = lift newGlobal >>= \name -> mapLLVMT (lift . withNewScope name) (f name)
-
-slowName :: Name -> Name
-slowName (Name n) = Name $ n <> "$$slow"
 
 nameOf :: (Bound f a, Comonad f) => a -> Name
 nameOf name = case identify name of Identifier n -> mkName n

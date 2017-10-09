@@ -66,10 +66,10 @@ deleteWhen f as = go as where
 
 definition :: Comonad f => Definition f -> Codegen (Maybe JS.Definition)
 definition (Definition (extract -> name) def) = case extract def of
-  Lambda args expr -> do
+  Lambda arg expr -> do
     expr <- expression (extract expr)
     undeclared %= delete name
-    pure . Just $ JS.Function (mkName name) (namesOf args) (Just expr)
+    pure . Just $ JS.Function (mkName name) (namesOf [arg]) (Just expr)
   def -> do
     canDefineYet <- case def of
       Reference Global target _ -> uses undeclared $ not . member target
@@ -93,9 +93,9 @@ expression :: Comonad f => Expression f -> Codegen JS.Expression
 expression (Literal (IntegerLiteral a)) = pure $ JS.IntegerLiteral a
 expression (Literal (FloatLiteral a)) = pure $ JS.FloatLiteral a
 expression (Reference _ a _) = pure $ referenceTo a
-expression (Lambda args expr) = do
+expression (Lambda arg expr) = do
   expr <- expression (extract expr)
-  pure $ JS.Lambda (namesOf args) (Just expr)
+  pure $ JS.Lambda (namesOf [arg]) (Just expr)
 expression (Apply (extract -> f) (extract -> x) _) = do
   let coerceArgs = traverse $ uncurry coerce
   uncurry (callChain coerceArgs) $ flatten f x

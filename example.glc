@@ -19,6 +19,5 @@ Bar =
 
 three = \a -> 3
 id = \a -> a
-const = \ a b -> a
 
-main = \a -> id foo
+test = \a -> a id foo

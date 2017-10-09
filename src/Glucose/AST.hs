@@ -8,20 +8,20 @@ newtype Module f = Module [f (Definition f)]
 deriving instance Eq (f (Definition f)) => Eq (Module f)
 deriving instance Show (f (Definition f)) => Show (Module f)
 
-data Definition f = Definition (f Identifier) (f (Expression f)) (Maybe (f Type))
+data Definition f = Definition (f Identifier) (f (Expression f))
                   | TypeDefinition (f Identifier) [f Identifier]
 
 deriving instance (Eq (f (Expression f)), Eq (f Identifier), Eq (f Type)) => Eq (Definition f)
 deriving instance (Show (f (Expression f)), Show (f Identifier), Show (f Type)) => Show (Definition f)
 
 instance Comonad f => Bound f (Definition f) where
-  identifier (Definition name _ _) = name
+  identifier (Definition name _) = name
   identifier (TypeDefinition name _) = name
 
 data Value f
   = Literal Literal
   | Variable Identifier
-  | Lambda [f Identifier] (f (Expression f))
+  | Lambda (f Identifier) (f (Expression f))
 
 deriving instance (Eq (f (Expression f)), Eq (f Identifier)) => Eq (Value f)
 deriving instance (Show (f (Expression f)), Show (f Identifier)) => Show (Value f)

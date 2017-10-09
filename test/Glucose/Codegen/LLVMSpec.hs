@@ -37,5 +37,5 @@ spec = describe "LLVM codegen" $ do
 codegenDefinitions :: [Identity (Definition Identity)] -> [Global]
 codegenDefinitions = LLVM.codegenDefinitions . map extract
 
-alignment = Alignment 16
+alignment = Alignment 0
 target = fromJust $ parseTriple "x86_64-pc-mingw32"

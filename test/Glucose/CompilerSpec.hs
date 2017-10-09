@@ -26,10 +26,10 @@ spec = describe "compile" $ do
   it "correctly compiles utf8 example to LLVM" $
     unpack <$> compile (codegenDefinitions $ LLVM target) source `shouldBe`
       Right ("@b = unnamed_addr alias i32, i32* @$5d0$_a0\n" ++
-             "@$5d0$_a0 = unnamed_addr constant i32 1230, align 16\n" ++
-             "@_b$5d5$0 = unnamed_addr constant double 1.23, align 16\n" ++
-             "@$5d2$_ = unnamed_addr constant i32 0, align 16\n" ++
-             "@$5d3$ = unnamed_addr constant i32 1, align 16\n")
+             "@$5d0$_a0 = unnamed_addr constant i32 1230\n" ++
+             "@_b$5d5$0 = unnamed_addr constant double 1.23\n" ++
+             "@$5d2$_ = unnamed_addr constant i32 0\n" ++
+             "@$5d3$ = unnamed_addr constant i32 1\n")
   it "correctly compiles utf8 example to JavaScript" $
     unpack <$> compile (codegenDefinitions JavaScript) source `shouldBe`
       Right ("\x5d0\&_a0 = 1230\n" ++

@@ -29,7 +29,7 @@ runLLVMT m = runStateT m $ DSL [] [] Nothing [] 0
 evalLLVMT :: Monad m => LLVMT m a -> m a
 evalLLVMT = fmap fst . runLLVMT
 
-execLLVMT :: Monad m => LLVMT m () -> m [Global]
+execLLVMT :: Monad m => LLVMT m a -> m [Global]
 execLLVMT m = do
   DSL globals blocks label statements _ <- snd <$> runLLVMT m
   unless (null blocks && isNothing label && null statements) $ error "incomplete function definition"
@@ -47,6 +47,9 @@ runLLVM = runIdentity . runLLVMT
 
 evalLLVM :: LLVM a -> a
 evalLLVM = fst . runLLVM
+
+execLLVM :: LLVM a -> [Global]
+execLLVM = runIdentity . execLLVMT
 
 -- * Declarations/definitions
 

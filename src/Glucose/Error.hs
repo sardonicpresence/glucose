@@ -56,11 +56,14 @@ formatError source = \case
       "recursive definition: the value of '" <> format name <> "' depends on itself"
     TypeChecker.TypeMismatch a b ->
       "type mismatch: expected '" <> format a <> "', found '" <> format b <> "'" -- TODO: improve
+    TypeChecker.LocalLambda _ ->
+      "lambdas can only be bound to globals"
   where
     location (TypeChecker.DuplicateDefinition a _) = startLocation a
     location (TypeChecker.UnrecognisedVariable a) = startLocation a
     location (TypeChecker.RecursiveDefinition a) = startLocation a
     location (TypeChecker.TypeMismatch a _) = startLocation a
+    location (TypeChecker.LocalLambda a) = startLocation a
 
 withLocation :: Location -> Text -> Text
 withLocation loc s = showLocation loc <> ":\n" <> s <> "\n"

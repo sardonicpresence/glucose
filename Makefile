@@ -4,7 +4,7 @@ LLVM=../llvm/build/bin/
 # PASSES=-inline -loop-unroll -gvn -simplifycfg -barrier -instcombine
 PASSES=-O3
 
-default : example.js example.exe
+default : example.js example.bc
 
 # %.exe : %.o src\RT\rt.o
 # 	ld -O --gc-sections -entry _start $^ -lkernel32 -o $@
