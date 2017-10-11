@@ -1,5 +1,6 @@
 module Glucose.Parser.ParseError where
 
+import Data.List (union)
 import Data.Semigroup
 import Data.Text
 import Glucose.Parser.EOFOr
@@ -20,4 +21,4 @@ instance Semigroup ParseError where
   (ParseError loc a) <> (ParseError _ b) = ParseError loc (a <> b)
 
 instance Semigroup ParseErrorDetails where
-  (ParseErrorDetails unexpected e1) <> (ParseErrorDetails _ e2) = ParseErrorDetails unexpected (e1 <> e2)
+  (ParseErrorDetails unexpected e1) <> (ParseErrorDetails _ e2) = ParseErrorDetails unexpected (e1 `union` e2)

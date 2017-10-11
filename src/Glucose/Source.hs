@@ -1,8 +1,10 @@
 module Glucose.Source where
 
+import Control.Applicative
 import Control.Comonad
+import Control.Lens
 import Data.Semigroup
-import Data.Text as Text
+import Data.Text as Text (Text, take, drop)
 
 -- | A location in UTF8 text. Zero-based code-point and one-based line/column.
 data Location = Location { codePoint, line, column :: Int } deriving (Eq, Ord)
@@ -40,10 +42,11 @@ instance Show SourceRange where
                                         if start /= end then showString "-" . shows end else id
 
 instance Read SourceRange where
-  readsPrec d s0 = [ (SourceRange start end, s3)
-                   | (start, s1) <- readsPrec (d+1) s0
-                   , ("-", s2) <- lex s1
-                   , (end, s3) <- readsPrec (d+1) s2]
+  readsPrec d s0 = do
+    (start, s1) <- readsPrec (d+1) s0
+    let ends = do ("-", s2) <- lex s1
+                  readsPrec (d+1) s2
+    map (_1 %~ SourceRange start) $ ends <|> [(start, s1)]
 
 instance Semigroup SourceRange where
   SourceRange a b <> SourceRange c d = SourceRange (min a c) (max b d)

@@ -12,3 +12,6 @@ floatLiteral = Value . Literal . FloatLiteral
 
 variable :: Text -> Expression f
 variable = Value . Variable . Identifier
+
+lambda :: f Identifier -> f (Expression f) -> Expression f
+lambda = (Value .) . Lambda
