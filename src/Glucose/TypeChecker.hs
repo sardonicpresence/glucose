@@ -118,9 +118,14 @@ popArgs = do
 
 define :: Identifier -> f (Definition Checked f) -> TypeCheck f m (f (Definition Checked f))
 define name value = do
+  when (isCAF value) $ throwError (CAF $ void value)
   modifyingM namespace $ handlingDuplicates declareDefinition value
   checked name
   pure value
+
+isCAF :: Comonad f => f (Definition Checked f) -> Bool
+isCAF (extract -> Definition _ (extract -> Apply{})) = True
+isCAF _ = False
 
 handlingDuplicates :: (Comonad f, Bound f (f a), MonadError (TypeCheckError f) m)
  => (f a -> Namespace f -> Either (Variable f) (Namespace f)) -> f a -> Namespace f -> m (Namespace f)
