@@ -58,7 +58,7 @@ spec = describe "parse" $ do
     let a = Identifier "a" `at` "1:1@0"
         b = Identifier "b" `at` "1:4@3"
         c = variable "c" `at` "1:7@6"
-     in parseTokens "a=\\b->c" `shouldParseAs` [AST.Definition a (lambda b c `at` "1:4@3 - 1:7@6") `at` "1:1@0-1:7@6"]
+     in parseTokens "a=\\b->c" `shouldParseAs` [AST.Definition a (lambda b c `at` "1:3@2 - 1:7@6") `at` "1:1@0-1:7@6"]
   it "errors on multi-argument lambda" $
     let unexpected = Token.Identifier "c" `at` "1:6@5"
      in parseTokens "a=\\b c->d" `shouldErrorWith` unexpectedToken unexpected ["\"->\""]

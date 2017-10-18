@@ -10,8 +10,9 @@ import Glucose.IR
 alias :: (Comonad f, Applicative f) => f Text -> f Text -> f (Definition Unchecked f)
 alias to from = definition to $ reference from
 
-function :: (Applicative f, Comonad f) => f Text -> f Text -> f (Expression Unchecked f) -> f (Definition Unchecked f)
-function name arg def = definition name $ Lambda <$> duplicate (argument <$> arg) <*> duplicate def
+function :: (Applicative f, Comonad f) => f Text -> f a -> f Text -> f (Expression Unchecked f) -> f (Definition Unchecked f)
+function name loc arg def = definition name $
+  Lambda <$ loc <*> duplicate (argument <$> arg) <*> duplicate def
 
 apply :: (Comonad f, Applicative f) => f (Expression Unchecked f) -> f (Expression Unchecked f) -> f (Expression Unchecked f)
 apply f a = (\f a -> Apply f a $ Type Untyped) <$> duplicate f <*> duplicate a

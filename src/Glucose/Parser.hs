@@ -39,7 +39,7 @@ definition = do
 
 typeDefinition :: Source f => ParseCompound f AST.Definition
 typeDefinition = AST.TypeDefinition <$$ keyword Type <**> name <**> constructors where
-  name = duplicate <$> identifier <* operator Assign
+  name = withSource identifier <* operator Assign
   constructors = traverse1 duplicate <$> identifier `separatedBy` operator Bar
 
 expression :: Source f => ParseCompound f AST.Expression
@@ -47,12 +47,10 @@ expression = buildExpression <$> some value where
   buildExpression [expr] = AST.Value <$> expr
   buildExpression es = let (a:as) = reverse es in AST.Apply <$> duplicate (buildExpression $ reverse as) <*> duplicate a
 
-value :: Source f => ParseCompound f AST.Value
+value :: forall f. Source f => ParseCompound f AST.Value
 value = AST.Variable <$$> identifier
     <|> AST.Literal <$$> literal
-    <|> toLambda <$> (beginLambda *> identifier <* operator Arrow) <*> expression
-  where
-    toLambda a b = AST.Lambda <$> duplicate a <*> duplicate b
+    <|> AST.Lambda <$$> (beginLambda **> withSource identifier <** operator Arrow) <**> withSource expression
 
 endOfDefinition :: Source f => ParseLexeme f ()
 endOfDefinition = (lexeme "end of definition" . traverse $ is _endOfDefinition) <|> pure <$> eof
@@ -76,7 +74,7 @@ beginLambda = lexeme "lambda" . traverse $ is _beginLambda
 
 -- * Utilities
 
-infixl 4 <$$>, <$$, <**>
+infixl 4 <$$>, <$$, <**>, <**, **>
 
 (<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
 (<$$>) = (<$>) . (<$>)
@@ -87,5 +85,14 @@ a <$$ b = const a <$$> b
 (<**>) :: (Applicative f, Applicative g) => f (g (a -> b)) -> f (g a) -> f (g b)
 f <**> a = (<*>) <$> f <*> a
 
+(<**) :: (Applicative f, Applicative g) => f (g a) -> f (g b) -> f (g a)
+a <** b = (<*) <$> a <*> b
+
+(**>) :: (Applicative f, Applicative g) => f (g a) -> f (g b) -> f (g b)
+a **> b = (*>) <$> a <*> b
+
 is :: Getting (First ()) s a -> s -> Maybe ()
 is a = preview $ a . like ()
+
+withSource :: (Functor f, Comonad g) => f (g a) -> f (g (g a))
+withSource = fmap duplicate

@@ -45,6 +45,9 @@ spec = describe "typeCheck" $ do
   it "errors on constant applicative forms" $
     let input = "id=\\a->a\ncaf=id 0"
      in typeCheck input `shouldErrorWith` TypeCheckError (CAF $ () `at` "2:1@9-2:8@16")
+  it "errors on lambdas at local scope" $
+    let input = "const=\\a->\\b->a"
+     in typeCheck input `shouldErrorWith` TypeCheckError (LocalLambda $ () `at` "1:11@10-1:15@14")
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
