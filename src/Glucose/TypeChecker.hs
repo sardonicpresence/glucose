@@ -55,7 +55,9 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
     when recursive . throwError $ RecursiveDefinition name
     startChecking $ extract name
     nextVar .= mkVarGen
-    Definition name <$> (traverse (bindTypes newVar) =<< typeCheckExpression value)
+    checked <- typeCheckExpression value
+    nextVar .= mkVarGen
+    Definition name <$> traverse (bindTypes newVar) checked
   Constructor name typeName index -> do
     let key = (extract typeName, index)
     modifyingM constructors . Map.insertOr key typeName $ duplicateDefinition typeName

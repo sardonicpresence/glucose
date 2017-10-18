@@ -48,6 +48,21 @@ spec = describe "typeCheck" $ do
   it "errors on lambdas at local scope" $
     let input = "const=\\a->\\b->a"
      in typeCheck input `shouldErrorWith` TypeCheckError (LocalLambda $ () `at` "1:11@10-1:15@14")
+  it "infers the most general type for simple functions (with normalised polymorphic type names)" $ do
+    let a = Polymorphic "a"
+    typeCheck "f=\\a->a" `shouldBe` Right (Module
+      [ function ("f" `at` "1:1@0") (() `at` "1:3@2") ("a" `at` "1:4@3") a $
+          reference Local ("a" `at` "1:7@6") a
+      ])
+    typeCheck "f=\\a->1.2" `shouldBe` Right (Module
+      [ function ("f" `at` "1:1@0") (() `at` "1:3@2") ("a" `at` "1:4@3") a $
+          Literal (FloatLiteral 1.2) `at` "1:7@6-1:9@8"
+      ])
+    typeCheck "type T=T\nf=\\a->T" `shouldBe` Right (Module
+      [ constructor ("T" `at` "1:6@5") ("T" `at` "1:8@7") 0
+      , function ("f" `at` "2:1@9") (() `at` "2:3@11") ("a" `at` "2:4@12") a $
+          reference Global ("T" `at` "2:7@15") (ADT "T")
+      ])
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
