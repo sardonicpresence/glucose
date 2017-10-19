@@ -1,4 +1,4 @@
-module Glucose.Test.IR.Checked (module Glucose.Test.IR.Core, alias, aliasAnywhere, function, reference) where
+module Glucose.Test.IR.Checked (module Glucose.Test.IR.Core, alias, aliasAnywhere, function, apply, reference, functionType) where
 
 import Glucose.Test.IR.Core
 
@@ -17,8 +17,14 @@ function :: (Applicative f, Comonad f) => f Text -> f a -> f Text -> DataType (T
 function name loc arg ty def = definition name $
   Lambda <$ loc <*> duplicate (flip argument ty <$> arg) <*> duplicate def
 
+apply :: (Comonad f, Applicative f) => f (Expression Checked f) -> f (Expression Checked f) -> DataType (Type Checked) -> f (Expression Checked f)
+apply f a ty = (\f a -> Apply f a $ Type $ Checked ty) <$> duplicate f <*> duplicate a
+
 reference :: Functor f => Ref Checked -> f Text -> DataType (Type Checked) -> f (Expression Checked f)
 reference kind name ty = (\n -> Reference kind (Identifier n) (Type $ Checked ty)) <$> name
 
 argument :: Text -> DataType (Type Checked) -> Arg Checked
 argument name = Arg (Identifier name) . Type . Checked
+
+functionType :: DataType (Type Checked) -> DataType (Type Checked) -> DataType (Type Checked)
+functionType from to = Function UnknownArity (Type $ Checked from) (Type $ Checked to)
