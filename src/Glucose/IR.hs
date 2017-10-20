@@ -11,6 +11,7 @@ module Glucose.IR
 where
 
 import Control.Comonad
+import Control.Generalised
 import Control.Lens
 import Data.List
 import Glucose.Identifier
@@ -257,3 +258,19 @@ instance Comonad f => Bound f (f (Definition ann f)) where
 
 instance Functor f => Bound f (f (Arg ann)) where
   identifier = fmap $ \case Arg name _ -> name
+
+
+-- * Generalised instances
+
+instance Generalised (Module ann) where
+  rewrap remap (Module defs) = Module $ map (remap $ rewrap remap) defs
+
+instance Generalised (Definition ann) where
+  rewrap remap (Definition name def) = Definition (remap id name) (remap (rewrap remap) def)
+  rewrap remap (Constructor name typeName index) = Constructor (remap id name) (remap id typeName) index
+
+instance Generalised (Expression ann) where
+  rewrap _ (Literal literal) = Literal literal
+  rewrap _ (Reference kind name ty) = Reference kind name ty
+  rewrap remap (Lambda arg expr) = Lambda (remap id arg) (remap (rewrap remap) expr)
+  rewrap remap (Apply f a ty) = Apply (remap (rewrap remap) f) (remap (rewrap remap) a) ty

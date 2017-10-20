@@ -2,6 +2,9 @@ module Glucose.TypeCheckerSpec (spec) where
 
 import Test.Prelude
 
+import Control.Comonad.Identity
+import Control.Comonad.Utils
+import Control.Generalised
 import Control.Monad
 import Data.Text (Text)
 import Glucose.Identifier
@@ -51,39 +54,39 @@ spec = describe "typeCheck" $ do
   describe "infers the most general type for simple functions (with normalised polymorphic type names)" $ do
     let a = Polymorphic "a"
     it "does so for the identity function" $
-      typeCheck "f=\\a->a" `shouldBe` Right (Module
-        [ function ("f" `at` "1:1@0") (() `at` "1:3@2") ("a" `at` "1:4@3") a $
-            reference Local ("a" `at` "1:7@6") a
+      typeCheck' "f=\\a->a" `shouldBe` Right (Module
+        [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
         ])
     it "does so for a constant function" $
-      typeCheck "f=\\a->1.2" `shouldBe` Right (Module
-        [ function ("f" `at` "1:1@0") (() `at` "1:3@2") ("a" `at` "1:4@3") a $
-            Literal (FloatLiteral 1.2) `at` "1:7@6-1:9@8"
+      typeCheck' "f=\\a->1.2" `shouldBe` Right (Module
+        [ functionAnywhere "f" "a" a . pure $
+            Literal (FloatLiteral 1.2)
         ])
     it "does so for a constant function returning a global" $
-      typeCheck "type T=T\nf=\\a->T" `shouldBe` Right (Module
-        [ constructor ("T" `at` "1:6@5") ("T" `at` "1:8@7") 0
-        , function ("f" `at` "2:1@9") (() `at` "2:3@11") ("a" `at` "2:4@12") a $
-            reference Global ("T" `at` "2:7@15") (ADT "T")
+      typeCheck' "type T=T\nf=\\a->T" `shouldBe` Right (Module
+        [ constructorAnywhere "T" "T" 0
+        , functionAnywhere "f" "a" a $ referenceAnywhere Global "T" (ADT "T")
         ])
-    it "does so for a function applying a constant to a fnuction argument" $ do
+    it "does so for a function applying a constant to a function argument" $ do
       let fn = functionType (Unboxed Integer) a
-      typeCheck "f=\\g->g 3" `shouldBe` Right (Module
-        [ function ("f" `at` "1:1@0") (() `at` "1:3@2") ("g" `at` "1:4@3") fn $
-            apply (reference Local ("g" `at` "1:7@6") fn)
-                  (Literal (IntegerLiteral 3) `at` "1:9@8") a
+      typeCheck' "f=\\g->g 3" `shouldBe` Right (Module
+        [ functionAnywhere "f" "g" fn $
+            apply (referenceAnywhere Local "g" fn)
+                  (pure $ Literal (IntegerLiteral 3)) a
         ])
-    it "does so for a function applying a global to a fnuction argument" $ do
+    it "does so for a function applying a global to a function argument" $ do
       let fn = functionType (Unboxed Float) a
-      typeCheck "f=\\g->g a\na=0.9" `shouldBe` Right (Module
-        [ function ("f" `at` "1:1@0") (() `at` "1:3@2") ("g" `at` "1:4@3") fn $
-            apply (reference Local ("g" `at` "1:7@6") fn)
-                  (reference Global ("a" `at` "1:9@8") (Unboxed Float)) a
-        , constant ("a" `at` "2:1@10") (FloatLiteral 0.9 `at` "2:3@12-2:5@14")
+      typeCheck' "f=\\g->g a\na=0.9" `shouldBe` Right (Module
+        [ functionAnywhere "f" "g" fn $
+            apply (referenceAnywhere Local "g" fn) (referenceAnywhere Global "a" (Unboxed Float)) a
+        , constantAnywhere "a" (FloatLiteral 0.9)
         ])
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
+
+typeCheck' :: Text -> Either CompileError (Module Checked Identity)
+typeCheck' = (rewrap forget <$>) . typeCheck
 
 duplicateDefinition :: String -> Text -> String -> CompileError
 duplicateDefinition loc name prev = TypeCheckError $ DuplicateDefinition (Identifier name `at` loc) (() `at` prev)

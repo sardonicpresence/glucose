@@ -64,6 +64,7 @@ library
                      , LLVM.Name
                      , Control.Comonad.Utils
                      , Control.Lens.Utils
+                     , Control.Generalised
                      , Data.Map.Utils
   default-extensions:  OverloadedStrings
                      , BangPatterns
