@@ -53,14 +53,14 @@ spec = describe "typeCheck" $ do
      in typeCheck input `shouldErrorWith` TypeCheckError (LocalLambda $ () `at` "1:11@10-1:15@14")
   describe "infers the most general type for simple functions (with normalised polymorphic type names)" $ do
     let a = Polymorphic "a"
+    let b = Polymorphic "b"
     it "does so for the identity function" $
       typeCheck' "f=\\a->a" `shouldBe` Right (Module
         [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
         ])
     it "does so for a constant function" $
       typeCheck' "f=\\a->1.2" `shouldBe` Right (Module
-        [ functionAnywhere "f" "a" a . pure $
-            Literal (FloatLiteral 1.2)
+        [ functionAnywhere "f" "a" a . pure $ Literal (FloatLiteral 1.2)
         ])
     it "does so for a constant function returning a global" $
       typeCheck' "type T=T\nf=\\a->T" `shouldBe` Right (Module
@@ -71,8 +71,7 @@ spec = describe "typeCheck" $ do
       let fn = functionType (Unboxed Integer) a
       typeCheck' "f=\\g->g 3" `shouldBe` Right (Module
         [ functionAnywhere "f" "g" fn $
-            apply (referenceAnywhere Local "g" fn)
-                  (pure $ Literal (IntegerLiteral 3)) a
+            apply (referenceAnywhere Local "g" fn) (pure . Literal $ IntegerLiteral 3) a
         ])
     it "does so for a function applying a global to a function argument" $ do
       let fn = functionType (Unboxed Float) a
@@ -81,6 +80,26 @@ spec = describe "typeCheck" $ do
             apply (referenceAnywhere Local "g" fn) (referenceAnywhere Global "a" (Unboxed Float)) a
         , constantAnywhere "a" (FloatLiteral 0.9)
         ])
+    it "does so for functions returning functions (and calling them)" $ do
+      let fn = functionType a a
+      typeCheck' "f=\\a->a\ng=\\a->f\nh=\\a->g a a" `shouldBe` Right (Module
+        [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
+        , functionAnywhere "g" "a" a $ referenceAnywhere Global "f" (functionType b b)
+        , functionAnywhere "h" "a" a $
+            let g_a = apply (referenceAnywhere Global "g" $ functionType a fn) (referenceAnywhere Local "a" a) fn
+             in apply g_a (referenceAnywhere Local "a" a) a
+        ])
+    it "does so when passing functions as arguments" $
+      typeCheck' "f=\\a->a\ng=\\h->h 3" `shouldBe` Right (Module
+        [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
+        , functionAnywhere "g" "h" (functionType (Unboxed Integer) a) $
+            apply (referenceAnywhere Local "h" $ functionType (Unboxed Integer) a) (pure . Literal $ IntegerLiteral 3) a
+        ])
+  describe "errors on function application of non-functions" $
+    it "does so for global constants" $
+      typeCheck' "a=2\nf=\\b->a b" `shouldErrorWith` TypeCheckError (TypeMismatch
+        (Type (Bound $ Function (Arity 1) (Type $ Bound $ Polymorphic "a") (Type $ Free "b")) `at` "2:7@10")
+        (Type (Bound $ Unboxed Integer) `at` "2:7@10"))
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
@@ -93,3 +112,6 @@ duplicateDefinition loc name prev = TypeCheckError $ DuplicateDefinition (Identi
 
 recursiveDefinition :: String -> Text -> CompileError
 recursiveDefinition loc name = TypeCheckError $ RecursiveDefinition $ Identifier name `at` loc
+
+-- typeMismatch :: TypeF Checking (DataType (Type Checking)) -> TypeF Checking (DataType (Type Checking)) -> CompileError
+-- typeMismatch unexpected expected = TypeCheckError $ TypeMismatch (pure $ Type unexpected) (pure $ Type expected)

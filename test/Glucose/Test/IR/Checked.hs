@@ -33,4 +33,4 @@ argument :: Text -> DataType (Type Checked) -> Arg Checked
 argument name = Arg (Identifier name) . Type . Checked
 
 functionType :: DataType (Type Checked) -> DataType (Type Checked) -> DataType (Type Checked)
-functionType from to = Function UnknownArity (Type $ Checked from) (Type $ Checked to)
+functionType from to = Function (Arity 1) (Type $ Checked from) (Type $ Checked to)

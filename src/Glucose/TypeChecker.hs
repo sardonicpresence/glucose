@@ -78,7 +78,7 @@ typeCheckExpression expr = for expr $ \case
     expr' <- notLambda =<< typeCheckExpression expr
     arg' <- notLambda =<< typeCheckExpression arg
     ty' <- checkingType newVar ty
-    unifier <- unify (typeOf <$> expr') (functionReturning ty' . typeOf <$> arg')
+    unifier <- unify (functionReturning ty' (typeOf $ extract arg') <$ expr) (typeOf <$> expr')
     namespace . declaredArgs . traversed . argType %= unifier
     pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
 
@@ -88,7 +88,8 @@ notLambda expr = case extract expr of
   _ -> pure expr
 
 functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
-functionReturning returnType argType = dataType # Function UnknownArity argType returnType
+-- TODO: Only (Arity 1) while we only support single-argument functions
+functionReturning returnType argType = dataType # Function (Arity 1) argType returnType
 
 typeCheckIdentifier :: f Identifier -> TypeCheck f m (Expression Checking f)
 typeCheckIdentifier variable = do
