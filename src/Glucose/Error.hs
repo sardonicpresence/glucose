@@ -55,7 +55,7 @@ formatError source = \case
     TypeChecker.RecursiveDefinition name ->
       "recursive definition: the value of '" <> format name <> "' depends on itself"
     TypeChecker.TypeMismatch a b ->
-      "type mismatch: expected '" <> format a <> "', found '" <> format b <> "'" -- TODO: improve
+      "type mismatch: expected '" <> pack (show a) <> "', found '" <> format b <> "'" -- TODO: improve
     TypeChecker.LocalLambda _ ->
       "lambdas can only be bound to globals"
     TypeChecker.CAF _ ->
@@ -64,7 +64,7 @@ formatError source = \case
     location (TypeChecker.DuplicateDefinition a _) = startLocation a
     location (TypeChecker.UnrecognisedVariable a) = startLocation a
     location (TypeChecker.RecursiveDefinition a) = startLocation a
-    location (TypeChecker.TypeMismatch a _) = startLocation a
+    location (TypeChecker.TypeMismatch _ a) = startLocation a
     location (TypeChecker.LocalLambda a) = startLocation a
     location (TypeChecker.CAF a) = startLocation a
 

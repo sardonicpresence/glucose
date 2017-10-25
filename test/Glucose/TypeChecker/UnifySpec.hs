@@ -56,18 +56,18 @@ spec = describe "unify" $ do
     (function (function a b) (function b a), function (function t c) (function d d)) `unifyTo`
     (function (function (unbox t) (unbox t)) (function (unbox t) (unbox t)), function (function t (unbox t)) (function (unbox t) (unbox t)))
   it "results in two identical types, ignoring boxing, or fails to unify" $ property $ \a b -> disjoint a b ==>
-    case unify (Identity a) (Identity b) of
+    case unify a (Identity b) of
       Left _ -> property True
       Right f -> (f a & recursing types %~ box) === (f b & recursing types %~ box)
 
 unifyTo :: (Type Checking, Type Checking) -> (Type Checking, Type Checking) -> Property
-unifyTo (a, b) (a', b') = (unify (Identity a) (Identity b) >>= \f -> pure (f a, f b)) === Right (a', b')
+unifyTo (a, b) (a', b') = (unify a (Identity b) >>= \f -> pure (f a, f b)) === Right (a', b')
 
 unifiesTo :: (Type Checking, Type Checking) -> Type Checking -> Property
 unifiesTo from to = unifyTo from (to, to)
 
 failsToUnify :: (Type Checking, Type Checking) -> Property
-failsToUnify (a, b) = case unify (Identity a) (Identity b) of
+failsToUnify (a, b) = case unify a (Identity b) of
   Left _ -> property True
   Right f -> counterexample ("unified to " ++ show (f a, f b)) False
 

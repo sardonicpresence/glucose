@@ -4,8 +4,8 @@ module Glucose.IR
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
-  pattern BoundType, pattern FreeType, pattern CheckedType,
-  dataType, typeVariables, free, uncheck, bind, types, bindings, boxed, unboxed,
+  pattern AnyType, pattern BoundType, pattern FreeType, pattern CheckedType,
+  dataType, typeVariables, free, uncheck, bind, types, bindings, boxed, unboxed, freeTypes, bindTypes, remap,
   Typed(..), typeAnnotations, replaceType, argType
 )
 where
@@ -14,6 +14,9 @@ import Control.Comonad
 import Control.Generalised
 import Control.Lens
 import Data.List
+import Data.Maybe
+import Data.String
+import Data.Traversable
 import Glucose.Identifier
 import Unsafe.Coerce
 
@@ -91,6 +94,9 @@ data Arity = UnknownArity | Arity Int
 data DataType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t | Polymorphic Identifier
   deriving (Eq, Ord, Functor, Foldable, Traversable)
 
+instance IsString (DataType t) where
+  fromString = Polymorphic . fromString
+
 instance Annotations Unchecked where
   data TypeF Unchecked ty = Untyped
     deriving (Eq, Functor, Foldable, Traversable)
@@ -99,7 +105,7 @@ instance Annotations Unchecked where
   typeF = prism (const Untyped) Left
 
 instance Annotations Checking where
-  data TypeF Checking ty = Free Identifier | Bound ty
+  data TypeF Checking ty = Any | Free Identifier | Bound ty
     deriving (Eq, Functor, Foldable, Traversable)
   type Ref Checking = ReferenceKind
   name `withType` ty = name ++ ":" ++ show ty
@@ -113,6 +119,7 @@ instance Annotations Checked where
   typeF = prism' Checked $ \(Checked ty) -> Just ty
 
 instance Show ty => Show (TypeF Checking ty) where
+  show Any = "*"
   show (Free name) = "*" ++ show name
   show (Bound ty) = show ty
 
@@ -124,11 +131,14 @@ instance Show Arity where
   show UnknownArity = "->"
   show (Arity n) = "-" ++ show n ++ ">"
 
-pattern BoundType :: DataType (Type Checking) -> Type Checking
-pattern BoundType ty = Type (Bound ty)
+pattern AnyType :: Type Checking
+pattern AnyType = Type Any
 
 pattern FreeType :: Identifier -> Type Checking
 pattern FreeType name = Type (Free name)
+
+pattern BoundType :: DataType (Type Checking) -> Type Checking
+pattern BoundType ty = Type (Bound ty)
 
 pattern CheckedType :: DataType (Type Checked) -> Type Checked
 pattern CheckedType ty = Type (Checked ty)
@@ -148,9 +158,9 @@ free f = typeVariables $ \(Checked name) -> Free <$> f name
 uncheck :: Traversal (Type Checked) (Type Checking) Identifier Identifier
 uncheck f = typeVariables $ \(Checked name) -> Bound <$> f name
 
-{- | Traversal mapping free type variables to checked type variables. -}
-bind :: Traversal (Type Checking) (Type Checked) Identifier Identifier
-bind f = typeVariables $ fmap Checked . f . \case Free name -> name; Bound name -> name
+{- | Traversal mapping free type variables & 'any' types to checked type variables. -}
+bind :: Traversal (Type Checking) (Type Checked) (Maybe Identifier) Identifier
+bind f = typeVariables $ fmap Checked . f . \case Any -> Nothing; Free name -> Just name; Bound name -> Just name
 
 types :: Annotations ann => Traversal' (Type ann) (Type ann)
 types = dataType . dataTypes
@@ -167,6 +177,18 @@ boxed a = a
 unboxed :: DataType ty -> DataType ty
 unboxed (Boxed ty) = Unboxed ty
 unboxed a = a
+
+freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
+freeTypes = remap $ typeAnnotations . free
+
+bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
+bindTypes = remap $ typeAnnotations . bind
+
+remap :: (Eq a, Applicative m) => Traversal from to a Identifier -> m Identifier -> from -> m to
+remap remapping newName from = do
+  let names = nub $ from ^.. getting remapping
+  subs <- for names $ \name -> (name, ) <$> newName
+  pure $ from & remapping %~ \a -> fromJust $ lookup a subs
 
 
 -- * Show instances

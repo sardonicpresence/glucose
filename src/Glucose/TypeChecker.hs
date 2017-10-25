@@ -57,7 +57,7 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
     nextVar .= mkVarGen
     checked <- typeCheckExpression value
     nextVar .= mkVarGen
-    Definition name <$> traverse (bindTypes newVar) checked
+    Definition name <$> traverse (bindTypes newVar . unboxReturnType) checked
   Constructor name typeName index -> do
     let key = (extract typeName, index)
     modifyingM constructors . Map.insertOr key typeName $ duplicateDefinition typeName
@@ -78,18 +78,33 @@ typeCheckExpression expr = for expr $ \case
     expr' <- notLambda =<< typeCheckExpression expr
     arg' <- notLambda =<< typeCheckExpression arg
     ty' <- checkingType newVar ty
-    unifier <- unify (functionReturning ty' (typeOf $ extract arg') <$ expr) (typeOf <$> expr')
+    unifier <- unifyApply (typeOf <$> expr') (typeOf <$> arg') ty'
     namespace . declaredArgs . traversed . argType %= unifier
     pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
+
+unifyApply :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m)
+ => f (Type Checking) -> f (Type Checking) -> Type Checking -> m (Type Checking -> Type Checking)
+unifyApply fn arg returnType  = case extract fn of
+  BoundType (Function _ a b) -> do
+    f <- unify a arg
+    g <- unify (f returnType) (f b <$ fn)
+    pure $ g . f
+  _ -> unify (functionReturning returnType $ extract arg) fn
+
+functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
+-- TODO: Only (Arity 1) while we only support single-argument functions
+functionReturning returnType argType = dataType # Function (Arity 1) argType returnType
+
+unboxReturnType :: (Functor f, Annotations ann) => Expression ann f -> Expression ann f
+unboxReturnType (Lambda arg def) = Lambda arg $ unboxApply <$> def where
+  unboxApply (Apply f a ty) = Apply f a $ ty & dataType %~ unboxed
+  unboxApply a = a
+unboxReturnType a = a
 
 notLambda :: f (Expression Checking f) -> TypeCheck f m (f (Expression Checking f))
 notLambda expr = case extract expr of
   Lambda{} -> throwError (LocalLambda $ void expr)
   _ -> pure expr
-
-functionReturning :: Annotations ann => Type ann -> Type ann -> Type ann
--- TODO: Only (Arity 1) while we only support single-argument functions
-functionReturning returnType argType = dataType # Function (Arity 1) argType returnType
 
 typeCheckIdentifier :: f Identifier -> TypeCheck f m (Expression Checking f)
 typeCheckIdentifier variable = do
@@ -150,17 +165,5 @@ referenceTo def = freeTypes newVar $ Reference Global (extract $ identifier def)
 referenceArg :: Arg Checking -> Expression Checking f
 referenceArg (Arg name ty) = Reference Local name ty
 
-freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
-freeTypes = remap $ typeAnnotations . free
-
-bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
-bindTypes = remap $ typeAnnotations . bind
-
-remap :: Applicative m => Traversal from to Identifier Identifier -> m Identifier -> from -> m to
-remap remapping newName from = do
-  let names = nub $ from ^.. getting remapping
-  subs <- for names $ \name -> (name, ) <$> newName
-  pure $ from & remapping %~ \a -> fromMaybe a $ List.lookup a subs
-
 checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
-checkingType = typeVariables . const . (Free <$>)
+checkingType = typeVariables . const . (Any <$)

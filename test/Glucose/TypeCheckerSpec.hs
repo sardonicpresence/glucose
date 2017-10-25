@@ -95,11 +95,14 @@ spec = describe "typeCheck" $ do
         , functionAnywhere "g" "h" (functionType (Unboxed Integer) a) $
             apply (referenceAnywhere Local "h" $ functionType (Unboxed Integer) a) (pure . Literal $ IntegerLiteral 3) a
         ])
-  describe "errors on function application of non-functions" $
+  describe "errors on function application on non-functions" $ do
+    let nonFunctionError from to = typeMismatch $ Function (Arity 1) (CheckedType from) (CheckedType to)
+    it "does so for literals" $
+      typeCheck' "f=\\b->3 b" `shouldErrorWith` nonFunctionError "a" "b" (Unboxed Integer `at` "1:7@6")
     it "does so for global constants" $
-      typeCheck' "a=2\nf=\\b->a b" `shouldErrorWith` TypeCheckError (TypeMismatch
-        (Type (Bound $ Function (Arity 1) (Type $ Bound $ Polymorphic "a") (Type $ Free "b")) `at` "2:7@10")
-        (Type (Bound $ Unboxed Integer) `at` "2:7@10"))
+      typeCheck' "a=2\nf=\\b->a b" `shouldErrorWith` nonFunctionError "a" "b" (Unboxed Integer `at` "2:7@10")
+    it "does so for return values" $
+      typeCheck' "f=\\a->7\ng=\\b->f b b" `shouldErrorWith` nonFunctionError "a" "b" (Unboxed Integer `at` "2:7@14-2:9@16")
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
@@ -113,5 +116,5 @@ duplicateDefinition loc name prev = TypeCheckError $ DuplicateDefinition (Identi
 recursiveDefinition :: String -> Text -> CompileError
 recursiveDefinition loc name = TypeCheckError $ RecursiveDefinition $ Identifier name `at` loc
 
--- typeMismatch :: TypeF Checking (DataType (Type Checking)) -> TypeF Checking (DataType (Type Checking)) -> CompileError
--- typeMismatch unexpected expected = TypeCheckError $ TypeMismatch (pure $ Type unexpected) (pure $ Type expected)
+typeMismatch :: DataType (Type Checked) -> FromSource (DataType (Type Checked)) -> CompileError
+typeMismatch expected actual = TypeCheckError $ TypeMismatch (CheckedType expected) (CheckedType <$> actual)
