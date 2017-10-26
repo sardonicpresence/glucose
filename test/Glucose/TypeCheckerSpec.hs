@@ -96,13 +96,21 @@ spec = describe "typeCheck" $ do
             apply (referenceAnywhere Local "h" $ functionType (Unboxed Integer) a) (pure . Literal $ IntegerLiteral 3) a
         ])
   describe "errors on function application on non-functions" $ do
-    let nonFunctionError from to = typeMismatch $ Function (Arity 1) (CheckedType from) (CheckedType to)
     it "does so for literals" $
-      typeCheck' "f=\\b->3 b" `shouldErrorWith` nonFunctionError "a" "b" (Unboxed Integer `at` "1:7@6")
+      typeCheck' "f=\\b->3 b" `shouldErrorWith` expectedFunction "a" "b" (Unboxed Integer `at` "1:7@6")
     it "does so for global constants" $
-      typeCheck' "a=2\nf=\\b->a b" `shouldErrorWith` nonFunctionError "a" "b" (Unboxed Integer `at` "2:7@10")
+      typeCheck' "a=2\nf=\\b->a b" `shouldErrorWith` expectedFunction "a" "b" (Unboxed Integer `at` "2:7@10")
     it "does so for return values" $
-      typeCheck' "f=\\a->7\ng=\\b->f b b" `shouldErrorWith` nonFunctionError "a" "b" (Unboxed Integer `at` "2:7@14-2:9@16")
+      typeCheck' "f=\\a->7\ng=\\b->f b b" `shouldErrorWith` expectedFunction "a" "b"
+        (Unboxed Integer `at` "2:7@14-2:9@16")
+  describe "errors on argument type mismatch" $ do
+    it "does so passing a non-function instead of a function" $
+      typeCheck' "f=\\g->g 1\nh=\\a->f 2" `shouldErrorWith` expectedFunction (Unboxed Integer) "a"
+        (Unboxed Integer `at` "2:9@18")
+    it "does so passing a function of the wrong type" $
+      typeCheck' "f=\\g->g 1\ng=\\f->f 2\nh=\\a->f g" `shouldErrorWith` typeMismatch
+        (functionType (Unboxed Integer) "a")
+        (functionType (functionType (Unboxed Integer) "b") "b" `at` "3:9@28")
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
@@ -118,3 +126,6 @@ recursiveDefinition loc name = TypeCheckError $ RecursiveDefinition $ Identifier
 
 typeMismatch :: DataType (Type Checked) -> FromSource (DataType (Type Checked)) -> CompileError
 typeMismatch expected actual = TypeCheckError $ TypeMismatch (CheckedType expected) (CheckedType <$> actual)
+
+expectedFunction :: DataType (Type Checked) -> DataType (Type Checked) -> FromSource (DataType (Type Checked)) -> CompileError
+expectedFunction from to = typeMismatch $ functionType from to

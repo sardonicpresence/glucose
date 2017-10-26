@@ -11,7 +11,7 @@ import Glucose.VarGen
 
 unify :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m)
  => Type Checking -> f (Type Checking) -> m (Type Checking -> Type Checking)
-unify expected actual = go expected (extract actual) where
+unify expected actual = maybe (throwError $ typeMismatch expected actual) pure $ go expected (extract actual) where
   go a AnyType = pure $ replace AnyType a
   go AnyType b = pure $ replace AnyType b
   go a b@FreeType{} = pure $ replace b (a & dataType %~ boxed)
@@ -19,10 +19,10 @@ unify expected actual = go expected (extract actual) where
   go a b@(BoundType Polymorphic{}) = pure $ replace b (a & dataType %~ unboxed)
   go a@(BoundType Polymorphic{}) b = pure $ replace a (b & dataType %~ unboxed)
   go (BoundType (Function _ a b)) (BoundType (Function _ c d)) = do
-    f <- unify a (c <$ actual)
-    g <- unify (f b) (f d <$ actual)
+    f <- go a c
+    g <- go (f b) (f d)
     pure $ g . f
-  go a b | a /= b = throwError $ typeMismatch expected actual
+  go a b | a /= b = Nothing
   go _ _ = pure id
 
 replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking

@@ -127,9 +127,9 @@ instance Show ty => Show (TypeF Checked ty) where
   show (Checked ty) = show ty
 
 instance Show Arity where
-  -- show _ = "->"
-  show UnknownArity = "->"
-  show (Arity n) = "-" ++ show n ++ ">"
+  show _ = "->"
+  -- show UnknownArity = "->"
+  -- show (Arity n) = "-" ++ show n ++ ">"
 
 pattern AnyType :: Type Checking
 pattern AnyType = Type Any
