@@ -21,7 +21,7 @@ apply' :: (Comonad f, Applicative f) => f Text -> f Text -> f (Expression Unchec
 apply' f a = (\f a -> Apply f a $ Type Untyped) <$> duplicate (reference f) <*> duplicate (reference a)
 
 reference :: Functor f => f Text -> f (Expression Unchecked f)
-reference name = (\n -> Reference () (Identifier n) (Type Untyped)) <$> name
+reference name = (\n -> Reference (pure $ Identifier n) (Type Untyped)) <$> name
 
 argument :: Text -> Arg Unchecked
 argument name = Arg (Identifier name) (Type Untyped)

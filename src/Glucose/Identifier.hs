@@ -4,6 +4,7 @@ module Glucose.Identifier where
 import Control.Comonad
 import Control.Monad
 import Control.Monad.Identity (Identity)
+import Data.Format
 import Data.Map as Map
 import Data.Map.Utils
 import Data.String
@@ -11,8 +12,10 @@ import Data.Text
 
 newtype Identifier = Identifier Text deriving (Eq, Ord)
 
-instance Show Identifier where
-  show (Identifier n) = unpack n
+instance Formattable f Identifier where
+  format _ (Identifier n) = n
+
+instance Show Identifier where show = unpack . format ()
 
 instance IsString Identifier where
   fromString = Identifier . pack

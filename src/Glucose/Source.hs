@@ -3,6 +3,7 @@ module Glucose.Source where
 import Control.Applicative
 import Control.Comonad
 import Control.Lens
+import Data.Format
 import Data.Semigroup
 import Data.Text as Text (Text, take, drop)
 
@@ -38,8 +39,9 @@ rewind (Location cp line col) = Location (cp-1) line (col-1)
 data SourceRange = SourceRange Location Location deriving (Eq, Ord)
 
 instance Show SourceRange where
-  showsPrec d (SourceRange start end) = showParen (d>10) $ shows start .
-                                        if start /= end then showString "-" . shows end else id
+  showsPrec _ (SourceRange start end) = if start == end
+    then shows start
+    else shows start . showString "-" . shows end
 
 instance Read SourceRange where
   readsPrec d s0 = do
@@ -55,8 +57,13 @@ instance Semigroup SourceRange where
 -- | Functor associating a value with a range of chracters.
 data FromSource a = FromSource SourceRange a deriving (Eq, Ord, Functor, Foldable, Traversable)
 
+data FromSourceFormat = WithSource | WithoutSource deriving (Eq)
+
+instance ProvidesFormat FromSourceFormat f => FormattableFunctor f FromSource where
+  fformat f (FromSource loc a) = formatIf WithSource (<> " `at` " <> format f (show loc)) f a
+
 instance Show a => Show (FromSource a) where
-  showsPrec d (FromSource loc a) = showParen (d>10) $ shows a . showString " at " . shows loc
+  showsPrec d (FromSource loc a) = showParen (d > 1) $ shows a . showString " `at` " . shows loc
 
 instance Applicative FromSource where
   pure = FromSource undefined

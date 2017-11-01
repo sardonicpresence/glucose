@@ -43,7 +43,7 @@ preamble = typeDeclarations
 definition :: Comonad f => Definition f -> LLVMT Identity ()
 definition (Definition (nameOf -> name) def) =
   mapLLVMT (withNewScope name) $ case extract def of
-    Reference Global to (llvmType -> ty) -> do
+    Reference (Global to) (llvmType -> ty) -> do
       let tyPtr = case ty of Ptr t -> t; _ -> ty
       void $ alias name External Unnamed (GlobalReference (nameOf to) tyPtr) tyPtr
     Lambda arg expr -> do
@@ -57,8 +57,8 @@ definition (Constructor (nameOf -> name) _ index) =
 
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
-expression (Reference Local (nameOf -> name) ty) = pure $ LLVM.LocalReference name (llvmType ty)
-expression (Reference Global (nameOf -> name) ty) = case ty of
+expression (Reference (Local (nameOf -> name)) ty) = pure $ LLVM.LocalReference name (llvmType ty)
+expression (Reference (Global (nameOf -> name)) ty) = case ty of
   CheckedType IR.Function{} -> pure $ LLVM.GlobalReference name (llvmType ty)
   _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
 expression Lambda{} = error "Non-top-level lambda expression in codegen!"

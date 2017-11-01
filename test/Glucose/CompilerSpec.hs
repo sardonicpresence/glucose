@@ -10,6 +10,7 @@ import Data.Text
 import Glucose.Codegen
 import Glucose.Codegen.Target
 import Glucose.Compiler
+import Glucose.Format
 
 source :: Text
 source = "b=\x5d0\&_a0\n" <>
@@ -39,7 +40,7 @@ spec = describe "compile" $ do
              "\x5d2_ = new \x5d1_()\n" ++
              "\x5d3 = new \x5d1_()\n")
 
-forAllOutputs :: (Comonad f, Applicative m) => (Codegen f -> m a) -> m ()
+forAllOutputs :: (Comonad f, FormattableFunctor Format f, Applicative m) => (Codegen f -> m a) -> m ()
 forAllOutputs f = traverse_ (f . codegen) [LLVM target, JavaScript]
 
 target :: Target

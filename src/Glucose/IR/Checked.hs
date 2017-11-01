@@ -12,6 +12,8 @@ import Control.Comonad.Utils
 import Data.List (intercalate)
 import Data.Semigroup (Semigroup(..))
 import qualified Data.Set as Set
+import Glucose.Format
+import Glucose.IR.Format (withType)
 import Glucose.IR hiding (Module(), Definition(), Expression(), Arg(), Type())
 import qualified Glucose.IR as IR
 
@@ -31,13 +33,13 @@ type Call a = [(Type, a)]
 data Partial a = Partial Int (Call a)
 data Application a = Application Type [Call a] (Maybe (Partial a))
 
-showCall args = "(" <> intercalate "," (map (\(ty, a) -> show a `IR.withType` ty) args) <> ")"
+showCall args = "(" <> intercalate "," (map (\(ty, a) -> show $ a `withType` ty) args) <> ")"
 
-instance Show a => Show (Application a) where
+instance Formattable Format a => Show (Application a) where
   show (Application _ calls Nothing) = "f" <> concatMap showCall calls
   show (Application ty calls (Just (Partial n call))) = let lambdaArgs = map (("$"<>) . show) [1..n] in
     "\\" <> unwords lambdaArgs <> " -> " <> show (Application ty calls Nothing) <> "(" <>
-    intercalate ", " (map (\(ty, a) -> show a `IR.withType` ty) call ++ lambdaArgs) <> ")"
+    intercalate ", " (map (\(ty, a) -> show $ a `withType` ty) call ++ lambdaArgs) <> ")"
 
 instance Semigroup (Application a) where
   (Application _ as b) <> (Application ty cs d) = Application ty (as <> cs) (b <|> d)
@@ -65,7 +67,7 @@ groupApplication ty = go ty [] where
   go ty _ bs = error $ "Cannot apply " <> show (length bs) <> " arguments to expression of type " <> show ty
 
 captures :: Comonad f => Expression f -> Set.Set Arg
-captures (Reference Local name ty) = Set.singleton $ Arg name ty
+captures (Reference (Local name) ty) = Set.singleton $ Arg name ty
 captures (Apply expr arg _) = captures (extract expr) <> captures (extract arg)
 captures (Lambda arg value) = captures (extract value) Set.\\ Set.fromList [extract arg]
 captures _ = mempty

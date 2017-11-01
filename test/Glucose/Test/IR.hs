@@ -1,5 +1,6 @@
 module Glucose.Test.IR where
 
+import Glucose.Format ()
 import Glucose.IR
 import Glucose.Test.Identifier ()
 import Test.QuickCheck.Arbitrary

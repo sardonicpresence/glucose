@@ -56,7 +56,7 @@ spec = describe "typeCheck" $ do
     let b = Polymorphic "b"
     it "does so for the identity function" $
       typeCheck' "f=\\a->a" `shouldBe` Right (Module
-        [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
+        [ functionAnywhere "f" "a" a $ referenceAnywhere (Local "a") a
         ])
     it "does so for a constant function" $
       typeCheck' "f=\\a->1.2" `shouldBe` Right (Module
@@ -65,35 +65,35 @@ spec = describe "typeCheck" $ do
     it "does so for a constant function returning a global" $
       typeCheck' "type T=T\nf=\\a->T" `shouldBe` Right (Module
         [ constructorAnywhere "T" "T" 0
-        , functionAnywhere "f" "a" a $ referenceAnywhere Global "T" (ADT "T")
+        , functionAnywhere "f" "a" a $ referenceAnywhere (Global "T") (ADT "T")
         ])
     it "does so for a function applying a constant to a function argument" $ do
       let fn = functionType (Unboxed Integer) a
       typeCheck' "f=\\g->g 3" `shouldBe` Right (Module
         [ functionAnywhere "f" "g" fn $
-            apply (referenceAnywhere Local "g" fn) (pure . Literal $ IntegerLiteral 3) a
+            apply (referenceAnywhere (Local "g") fn) (pure . Literal $ IntegerLiteral 3) a
         ])
     it "does so for a function applying a global to a function argument" $ do
       let fn = functionType (Unboxed Float) a
       typeCheck' "f=\\g->g a\na=0.9" `shouldBe` Right (Module
         [ functionAnywhere "f" "g" fn $
-            apply (referenceAnywhere Local "g" fn) (referenceAnywhere Global "a" (Unboxed Float)) a
+            apply (referenceAnywhere (Local "g") fn) (referenceAnywhere (Global "a") (Unboxed Float)) a
         , constantAnywhere "a" (FloatLiteral 0.9)
         ])
     it "does so for functions returning functions (and calling them)" $ do
       let fn = functionType a a
       typeCheck' "f=\\a->a\ng=\\a->f\nh=\\a->g a a" `shouldBe` Right (Module
-        [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
-        , functionAnywhere "g" "a" a $ referenceAnywhere Global "f" (functionType b b)
+        [ functionAnywhere "f" "a" a $ referenceAnywhere (Local "a") a
+        , functionAnywhere "g" "a" a $ referenceAnywhere (Global "f") (functionType b b)
         , functionAnywhere "h" "a" a $
-            let g_a = apply (referenceAnywhere Global "g" $ functionType a fn) (referenceAnywhere Local "a" a) fn
-             in apply g_a (referenceAnywhere Local "a" a) a
+            let g_a = apply (referenceAnywhere (Global "g") $ functionType a fn) (referenceAnywhere (Local "a") a) fn
+             in apply g_a (referenceAnywhere (Local "a") a) a
         ])
     it "does so when passing functions as arguments" $
       typeCheck' "f=\\a->a\ng=\\h->h 3" `shouldBe` Right (Module
-        [ functionAnywhere "f" "a" a $ referenceAnywhere Local "a" a
+        [ functionAnywhere "f" "a" a $ referenceAnywhere (Local "a") a
         , functionAnywhere "g" "h" (functionType (Unboxed Integer) a) $
-            apply (referenceAnywhere Local "h" $ functionType (Unboxed Integer) a) (pure . Literal $ IntegerLiteral 3) a
+            apply (referenceAnywhere (Local "h") $ functionType (Unboxed Integer) a) (pure . Literal $ IntegerLiteral 3) a
         ])
   describe "errors on function application on non-functions" $ do
     it "does so for literals" $

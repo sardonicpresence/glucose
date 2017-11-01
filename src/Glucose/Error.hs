@@ -3,8 +3,9 @@ module Glucose.Error (CompileError(..), liftErrors, formatError) where
 import Control.Comonad
 import Control.Monad.Except
 import Data.Semigroup
-import Data.Text (Text, pack)
+import Data.Text (Text, pack, unpack)
 import qualified Data.Text as Text
+import qualified Glucose.Format as Format
 import qualified Glucose.Lexer.SyntaxError as Lexer
 import Glucose.Parser.EOFOr
 import qualified Glucose.Parser.ParseError as Parser
@@ -16,7 +17,10 @@ data CompileError
   = SyntaxError Lexer.SyntaxError
   | ParseError Parser.ParseError
   | TypeCheckError (TypeChecker.TypeCheckError FromSource)
-  deriving (Eq, Show)
+  deriving (Eq)
+
+instance Show CompileError where
+  show = unpack . formatError ""
 
 liftErrors :: (ErrorDetails e, MonadError CompileError m) => Either e a -> m a
 liftErrors = either (throwError . toCompileError) pure
@@ -48,14 +52,14 @@ formatError source = \case
     where fromUnexpected = formatEOF . (showToken source <$>)
   TypeCheckError details -> withLocation (location details) $ case details of
     TypeChecker.DuplicateDefinition name prevLoc ->
-      "duplicate definition of '" <> format name <> "'\n" <>
+      "duplicate definition of '" <> fformat name <> "'\n" <>
       "previously defined at " <> showLocation (startLocation prevLoc)
     TypeChecker.UnrecognisedVariable name ->
-      "unrecognised variable '" <> format name <> "'"
+      "unrecognised variable '" <> fformat name <> "'"
     TypeChecker.RecursiveDefinition name ->
-      "recursive definition: the value of '" <> format name <> "' depends on itself"
+      "recursive definition: the value of '" <> fformat name <> "' depends on itself"
     TypeChecker.TypeMismatch a b ->
-      "type mismatch: expected '" <> pack (show a) <> "', found '" <> format b <> "'" -- TODO: improve
+      "type mismatch: expected '" <> format a <> "', found '" <> fformat b <> "'" -- TODO: improve
     TypeChecker.LocalLambda _ ->
       "lambdas can only be bound to globals"
     TypeChecker.CAF _ ->
@@ -71,8 +75,11 @@ formatError source = \case
 withLocation :: Location -> Text -> Text
 withLocation loc s = showLocation loc <> ":\n" <> s <> "\n"
 
-format :: (Show a, Comonad f) => f a -> Text
-format = pack . show . extract
+format :: Format.Formattable Format.Format a => a -> Text
+format = Format.format Format.User
+
+fformat :: (Format.FormattableFunctor Format.Format f, Format.Formattable Format.Format a) => f a -> Text
+fformat = Format.fformat Format.User
 
 formatEOF :: EOFOr Text -> Text
 formatEOF = fromEOF "end of file"

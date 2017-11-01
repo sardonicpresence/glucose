@@ -46,9 +46,11 @@ library
                      , Glucose.Codegen.LLVM.Types
                      , Glucose.Codegen.Target
                      , Glucose.Error
+                     , Glucose.Format
                      , Glucose.Identifier
                      , Glucose.IR
                      , Glucose.IR.Checked
+                     , Glucose.IR.Format
                      , Glucose.Namespace
                      , Glucose.Source
                      , Glucose.Token
@@ -66,6 +68,7 @@ library
                      , Control.Lens.Utils
                      , Control.Generalised
                      , Data.Map.Utils
+                     , Data.Format
   default-extensions:  OverloadedStrings
                      , BangPatterns
                      , MultiParamTypeClasses
@@ -140,6 +143,7 @@ test-suite glucose-test
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-extensions:  OverloadedStrings
                      , FlexibleInstances
+                     , FlexibleContexts
   default-language:    Haskell2010
 
 source-repository head

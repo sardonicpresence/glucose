@@ -2,7 +2,7 @@
 module Glucose.IR
 (
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
-  Annotations(..), ReferenceAnnotation(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
+  Annotations(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
   Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
   pattern AnyType, pattern BoundType, pattern FreeType, pattern CheckedType,
   dataType, typeVariables, free, uncheck, bind, types, bindings, boxed, unboxed, freeTypes, bindTypes, remap,
@@ -13,6 +13,7 @@ where
 import Control.Comonad
 import Control.Generalised
 import Control.Lens
+import Data.Format
 import Data.List
 import Data.Maybe
 import Data.String
@@ -29,10 +30,10 @@ deriving instance (Eq (f Identifier), Eq (f (Expression ann f))) => Eq (Definiti
 
 data Expression ann f
   = Literal Literal
-  | Reference (Ref ann) Identifier (Type ann)
+  | Reference (Ref ann Identifier) (Type ann)
   | Lambda (f (Arg ann)) (f (Expression ann f))
   | Apply (f (Expression ann f)) (f (Expression ann f)) (Type ann)
-deriving instance (Eq (Type ann), Eq (Ref ann), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
+deriving instance (Eq (Type ann), Eq (Ref ann Identifier), Eq (f Identifier), Eq (f (Arg ann)), Eq (f (Expression ann f))) => Eq (Expression ann f)
 
 data Literal = IntegerLiteral Int | FloatLiteral Double deriving (Eq)
 
@@ -43,10 +44,9 @@ deriving instance Ord (Type ann) => Ord (Arg ann)
 
 -- * Annotations
 
-class (Traversable (TypeF ann), ReferenceAnnotation (Ref ann)) => Annotations ann where
+class Traversable (TypeF ann) => Annotations ann where
   data TypeF ann :: * -> *
-  type Ref ann :: *
-  withType :: String -> Type ann -> String
+  type Ref ann :: * -> *
   typeF :: Prism' (TypeF ann a) a
 
 newtype Type ann = Type (TypeF ann (DataType (Type ann)))
@@ -54,8 +54,8 @@ newtype Type ann = Type (TypeF ann (DataType (Type ann)))
 deriving instance Eq (TypeF ann (DataType (Type ann))) => Eq (Type ann)
 deriving instance Ord (TypeF ann (DataType (Type ann))) => Ord (Type ann)
 
-instance Show (TypeF ann (DataType (Type ann))) => Show (Type ann) where
-  show (Type ty) = show ty
+instance Formattable f (TypeF ann (DataType (Type ann))) => Formattable f (Type ann) where
+  format f (Type ty) = format f ty
 
 _Type :: Iso (Type from) (Type to) (TypeF from (DataType (Type from))) (TypeF to (DataType (Type to)))
 _Type = flip iso Type $ \(Type ty) -> ty
@@ -70,17 +70,13 @@ data Checked
 
 -- * References
 
-class ReferenceAnnotation a where
-  showRef :: Show b => a -> b -> String
+data ReferenceKind a = Local a | Global a deriving (Eq, Functor)
 
-instance ReferenceAnnotation () where
-  showRef _ = show
-
-data ReferenceKind = Local | Global deriving (Eq)
-
-instance ReferenceAnnotation ReferenceKind where
-  showRef Local a = "%" ++ show a
-  showRef Global a = "@" ++ show a
+instance Comonad ReferenceKind where
+  extract (Local a) = a
+  extract (Global a) = a
+  duplicate (Local a) = Local (Local a)
+  duplicate (Global a) = Global (Global a)
 
 
 -- * Types
@@ -100,36 +96,20 @@ instance IsString (DataType t) where
 instance Annotations Unchecked where
   data TypeF Unchecked ty = Untyped
     deriving (Eq, Functor, Foldable, Traversable)
-  type Ref Unchecked = ()
-  withType = const
+  type Ref Unchecked = Identity
   typeF = prism (const Untyped) Left
 
 instance Annotations Checking where
   data TypeF Checking ty = Any | Free Identifier | Bound ty
     deriving (Eq, Functor, Foldable, Traversable)
   type Ref Checking = ReferenceKind
-  name `withType` ty = name ++ ":" ++ show ty
   typeF = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
 
 instance Annotations Checked where
   newtype TypeF Checked ty = Checked ty
     deriving (Eq, Ord, Functor, Foldable, Traversable)
   type Ref Checked = ReferenceKind
-  name `withType` ty = name ++ ":" ++ show ty
   typeF = prism' Checked $ \(Checked ty) -> Just ty
-
-instance Show ty => Show (TypeF Checking ty) where
-  show Any = "*"
-  show (Free name) = "*" ++ show name
-  show (Bound ty) = show ty
-
-instance Show ty => Show (TypeF Checked ty) where
-  show (Checked ty) = show ty
-
-instance Show Arity where
-  show _ = "->"
-  -- show UnknownArity = "->"
-  -- show (Arity n) = "-" ++ show n ++ ">"
 
 pattern AnyType :: Type Checking
 pattern AnyType = Type Any
@@ -191,45 +171,6 @@ remap remapping newName from = do
   pure $ from & remapping %~ \a -> fromJust $ lookup a subs
 
 
--- * Show instances
-
-instance (Comonad f, Annotations ann) => Show (Module ann f) where
-  show (Module defs) = intercalate "\n\n" $ map (show . extract) defs
-
-instance (Comonad f, Annotations ann) => Show (Definition ann f) where
-  show (Definition n value) = if declaration == name then definition else declaration ++ "\n" ++ definition where
-    name = show $ extract n
-    declaration = name `withType` typeOf (extract value)
-    definition = name ++ " = " ++ show (extract value)
-  show (Constructor name typeName index) = show (extract name) ++ " = " ++ show (extract typeName) ++ "#" ++ show index
-
-instance (Comonad f, Annotations ann) => Show (Expression ann f) where
-  show (Literal lit) = show lit
-  show (Reference kind name ty) = showRef kind name `withType` ty
-  show (Lambda arg value) = "\\" ++ show (extract arg) ++ " -> " ++ show (extract value)
-  show (Apply expr arg ty) = "((" ++ show (extract expr) ++ ") (" ++ show (extract arg) ++ "))" `withType` ty
-
-instance Annotations ann => Show (Arg ann) where
-  show (Arg name ty) = show name `withType` ty
-
-instance Show Literal where
-  show (IntegerLiteral a) = show a
-  show (FloatLiteral a) = show a
-
-instance (Show (Type ann), Annotations ann) => Show (DataType (Type ann)) where
-  show (Unboxed ty) = show ty
-  show (Boxed ty) = "{" ++ show ty ++ "}"
-  show (ADT name) = show name ++ "#"
-  show (Function ar arg ret) = case arg ^? dataType of
-    Just Function{} -> "(" ++ show arg ++ ")" ++ show ar ++ show ret
-    _ -> show arg ++ show ar ++ show ret
-  show (Polymorphic name) = show name
-
-instance Show Primitive where
-  show Integer = "Int"
-  show Float = "Float"
-
-
 -- * Typed
 
 class Typed ann a | a -> ann where
@@ -242,7 +183,7 @@ instance (Comonad f, Annotations ann) => Typed ann (Definition ann f) where
 instance (Comonad f, Annotations ann) => Typed ann (Expression ann f) where
   typeOf (Literal (IntegerLiteral _)) = dataType # Unboxed Integer
   typeOf (Literal (FloatLiteral _)) = dataType # Unboxed Float
-  typeOf (Reference _ _ ty) = ty
+  typeOf (Reference _ ty) = ty
   typeOf (Lambda (pure -> args) expr) = go (length args) args where
     go _ [] = typeOf (extract expr) & dataType %~ unboxed
     go m (a:as) = dataType # Function (Arity m) (typeOf $ extract a) (go (m-1) as)
@@ -256,7 +197,7 @@ typeAnnotations :: (Traversable f, Ref from ~ Ref to)
  => Traversal (Expression from f) (Expression to f) (Type from) (Type to)
 typeAnnotations f = \case
   Literal lit -> pure $ Literal lit
-  Reference kind name ty -> Reference kind name <$> f ty
+  Reference ref ty -> Reference ref <$> f ty
   Lambda arg expr -> Lambda <$> traverse (argType f) arg <*> traverse (typeAnnotations f) expr where
     argType f (Arg name ty) = Arg name <$> f ty
   Apply fun arg ty -> Apply <$> traverse (typeAnnotations f) fun <*> traverse (typeAnnotations f) arg <*> f ty
@@ -293,6 +234,6 @@ instance Generalised (Definition ann) where
 
 instance Generalised (Expression ann) where
   rewrap _ (Literal literal) = Literal literal
-  rewrap _ (Reference kind name ty) = Reference kind name ty
+  rewrap _ (Reference ref ty) = Reference ref ty
   rewrap remap (Lambda arg expr) = Lambda (remap id arg) (remap (rewrap remap) expr)
   rewrap remap (Apply f a ty) = Apply (remap (rewrap remap) f) (remap (rewrap remap) a) ty

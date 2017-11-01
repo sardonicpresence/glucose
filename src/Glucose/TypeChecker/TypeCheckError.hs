@@ -12,4 +12,4 @@ data TypeCheckError f
   | CAF (f ())
 
 deriving instance (Eq (f Identifier), Eq (f ()), Eq (f (Type Checked))) => Eq (TypeCheckError f)
-deriving instance (Show (f Identifier), Show (f ()), Show (f (Type Checked))) => Show (TypeCheckError f)
+deriving instance (Show (f Identifier), Show (f ()), Show (f (Type Checked)), Show (Type Checked)) => Show (TypeCheckError f)

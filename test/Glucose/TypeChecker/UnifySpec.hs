@@ -6,6 +6,7 @@ import Control.Comonad.Identity
 import Control.Lens
 import Control.Lens.Utils
 import Data.List
+import Glucose.Format ()
 import Glucose.IR hiding (free)
 import Glucose.Test.IR
 import Glucose.Test.IR.Checking
