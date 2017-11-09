@@ -16,6 +16,9 @@ constructorAnywhere ty ctor = constructor (pure ty) (pure ctor)
 definitionAnywhere :: (Applicative f, Comonad f) => Text -> Expression ann f -> f (Definition ann f)
 definitionAnywhere name value = definition (pure name) (pure value)
 
+literalAnywhere :: Applicative f => Literal -> f (Expression ann f)
+literalAnywhere = literal . pure
+
 -- * With source locations
 
 constant :: (Applicative f, Comonad f) => f Text -> f Literal -> f (Definition ann f)
@@ -26,3 +29,6 @@ constructor ty ctor index = ctor $> Constructor (Identifier <$> ctor) (Identifie
 
 definition :: (Applicative f, Comonad f) => f Text -> f (Expression ann f) -> f (Definition ann f)
 definition name value = Definition <$> duplicate (Identifier <$> name) <*> duplicate value
+
+literal :: Functor f => f Literal -> f (Expression ann f)
+literal value = Literal <$> value
