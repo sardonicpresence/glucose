@@ -7,17 +7,17 @@ import Glucose.IR
 
 -- * Without source locations
 
-constantAnywhere :: (Applicative f, Comonad f) => Text -> Literal -> f (Definition ann f)
-constantAnywhere name lit = constant (pure name) (pure lit)
+constant' :: (Applicative f, Comonad f) => Text -> Literal -> f (Definition ann f)
+constant' name lit = constant (pure name) (pure lit)
 
-constructorAnywhere :: (Applicative f, Comonad f) => Text -> Text -> Int -> f (Definition ann f)
-constructorAnywhere ty ctor = constructor (pure ty) (pure ctor)
+constructor' :: (Applicative f, Comonad f) => Text -> Text -> Int -> f (Definition ann f)
+constructor' ty ctor = constructor (pure ty) (pure ctor)
 
-definitionAnywhere :: (Applicative f, Comonad f) => Text -> Expression ann f -> f (Definition ann f)
-definitionAnywhere name value = definition (pure name) (pure value)
+definition' :: (Applicative f, Comonad f) => Text -> Expression ann f -> f (Definition ann f)
+definition' name value = definition (pure name) (pure value)
 
-literalAnywhere :: Applicative f => Literal -> f (Expression ann f)
-literalAnywhere = literal . pure
+literal' :: Applicative f => Literal -> f (Expression ann f)
+literal' = literal . pure
 
 -- * With source locations
 

@@ -88,5 +88,7 @@ showSource :: FromSource a -> Text -> Text
 showSource (FromSource (SourceRange from to) _) =
   Text.take (codePointsBetween from to + 1) . Text.drop (codePoint from)
 
+infixl 1 `at`
+
 at :: a -> String -> FromSource a
 a `at` s = FromSource (read s) a
