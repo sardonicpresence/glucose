@@ -43,7 +43,7 @@ spec = describe "JavaScript codegen" $ do
       [ function' "f" "a" a $ local' "a" a
       , function' "g" "a" a $ global' "b" b
       , function' "h" "a" a $ global' "c" (Unboxed Integer)
-      , function' "i" "a" a $ literal' (IR.IntegerLiteral 42)
+      , function' "i" "a" a $ integer' 42
       , function' "j" "a" a $ global' "f" (a --> b)
       , function' "k" "f" (a --> b) $ local' "f" (a --> b) ]
         `shouldShow` unlines
@@ -57,12 +57,22 @@ spec = describe "JavaScript codegen" $ do
     codegenDefinitions
       [ function' "f1" "a" a $ apply' (global' "g") (local' "a") a b
       , function' "f2" "a" a $ apply' (apply' (global' "h") (local' "a") a) (global' "g") (b --> c) d
-      ]
+      , function' "f3" "f" (Unboxed Integer --> a) $ apply' (local' "f") (const $ integer' 3) (Unboxed Integer) a
+      , function' "f4" "f" (a --> b) $ apply' (apply' (global' "g") (local' "f") (a --> b)) (const $ integer' 3) (Unboxed Integer) c ]
         `shouldShow` unlines
       [ "function f1(a) { return g(a) }"
-      , "function f2(a) { return h(a)(g) }" ]
-
-  -- TODO: JavaScript name mangling e.g. keywords
+      , "function f2(a) { return h(a)(g) }"
+      , "function f3(f) { return f(3) }"
+      , "function f4(f) { return g(f)(3) }" ]
+  it "mangles reserved words" $
+    codegenDefinitions
+      [ alias' "const" "null" $ a --> b
+      , alias' "this" "with" $ Unboxed Integer
+      , function' "true" "class" a $ apply' (global' "catch") (local' "class") a b ]
+        `shouldShow` unlines
+      [ "$const = $null"
+      , "$this = $with"
+      , "function $true($class) { return $catch($class) }" ]
 
 codegenDefinitions :: [Identity (Definition Identity)] -> JavaScript
 codegenDefinitions = JS.codegenDefinitions . map extract

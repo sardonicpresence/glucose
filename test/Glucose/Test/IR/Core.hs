@@ -19,6 +19,9 @@ definition' name value = definition (pure name) (pure value)
 literal' :: Applicative f => Literal -> f (Expression ann f)
 literal' = literal . pure
 
+integer' :: Applicative f => Int -> f (Expression ann f)
+integer' = literal . pure . IntegerLiteral
+
 -- * With source locations
 
 constant :: (Applicative f, Comonad f) => f Text -> f Literal -> f (Definition ann f)
