@@ -57,6 +57,7 @@ library
                      , Glucose.TypeChecker
                      , Glucose.TypeChecker.TypeCheckError
                      , Glucose.TypeChecker.Unify
+                     , Glucose.Unique
                      , Glucose.VarGen
                      , Glucose.Version
                      , JavaScript.AST
@@ -128,6 +129,7 @@ test-suite glucose-test
                      , Glucose.Test.IR.Unchecked
                      , Glucose.Test.Lexer
                      , Glucose.Test.Source
+                     , Glucose.Test.Unique
                      , Test.Prelude
                      , Test.Utils
                      , Test.Executable

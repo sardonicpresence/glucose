@@ -18,8 +18,9 @@ import Data.List
 import Data.Maybe
 import Data.String
 import Data.Traversable
+import Glucose.Unique
 import Glucose.Identifier
-import Unsafe.Coerce
+import Unsafe.Coerce (unsafeCoerce)
 
 newtype Module ann f = Module [f (Definition ann f)]
 deriving instance (Eq (f (Definition ann f))) => Eq (Module ann f)
@@ -100,7 +101,7 @@ instance Annotations Unchecked where
   typeF = prism (const Untyped) Left
 
 instance Annotations Checking where
-  data TypeF Checking ty = Any | Free Identifier | Bound ty
+  data TypeF Checking ty = Any Unique | Free Unique | Bound ty
     deriving (Eq, Functor, Foldable, Traversable)
   type Ref Checking = ReferenceKind
   typeF = prism' Bound $ \case Bound ty -> Just ty; _ -> Nothing
@@ -111,11 +112,11 @@ instance Annotations Checked where
   type Ref Checked = ReferenceKind
   typeF = prism' Checked $ \(Checked ty) -> Just ty
 
-pattern AnyType :: Type Checking
-pattern AnyType = Type Any
+pattern AnyType :: Unique -> Type Checking
+pattern AnyType u = Type (Any u)
 
-pattern FreeType :: Identifier -> Type Checking
-pattern FreeType name = Type (Free name)
+pattern FreeType :: Unique -> Type Checking
+pattern FreeType u = Type (Free u)
 
 pattern BoundType :: DataType (Type Checking) -> Type Checking
 pattern BoundType ty = Type (Bound ty)
@@ -131,16 +132,16 @@ typeVariables f = _Type $ either (review typeF <$>) ((fmap.fmap) Polymorphic . f
   typeVariable ty = Left . pure $ unsafeCoerce ty
 
 {- | Traversal mapping checked type variables to free type variables. -}
-free :: Traversal (Type Checked) (Type Checking) Identifier Identifier
+free :: Traversal (Type Checked) (Type Checking) Identifier Unique
 free f = typeVariables $ \(Checked name) -> Free <$> f name
 
 {- | Traversal mapping checked type variables to checking type variables. -}
 uncheck :: Traversal (Type Checked) (Type Checking) Identifier Identifier
 uncheck f = typeVariables $ \(Checked name) -> Bound <$> f name
 
-{- | Traversal mapping free type variables & 'any' types to checked type variables. -}
-bind :: Traversal (Type Checking) (Type Checked) (Maybe Identifier) Identifier
-bind f = typeVariables $ fmap Checked . f . \case Any -> Nothing; Free name -> Just name; Bound name -> Just name
+{- | Traversal mapping polymorphic type variables to checked type variables. -}
+bind :: Traversal (Type Checking) (Type Checked) (Either Unique Identifier) Identifier
+bind f = typeVariables $ fmap Checked . f . \case Any u -> Left u; Free u -> Left u; Bound name -> Right name
 
 types :: Annotations ann => Traversal' (Type ann) (Type ann)
 types = dataType . dataTypes
@@ -158,13 +159,13 @@ unboxed :: DataType ty -> DataType ty
 unboxed (Boxed ty) = Unboxed ty
 unboxed a = a
 
-freeTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checked f -> m (Expression Checking f)
+freeTypes :: (Applicative m, Traversable f) => m Unique -> Expression Checked f -> m (Expression Checking f)
 freeTypes = remap $ typeAnnotations . free
 
 bindTypes :: (Applicative m, Traversable f) => m Identifier -> Expression Checking f -> m (Expression Checked f)
 bindTypes = remap $ typeAnnotations . bind
 
-remap :: (Eq a, Applicative m) => Traversal from to a Identifier -> m Identifier -> from -> m to
+remap :: (Eq a, Applicative m) => Traversal from to a b -> m b -> from -> m to
 remap remapping newName from = do
   let names = nub $ from ^.. getting remapping
   subs <- for names $ \name -> (name, ) <$> newName

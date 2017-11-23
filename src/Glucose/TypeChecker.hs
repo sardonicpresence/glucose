@@ -22,13 +22,14 @@ import Glucose.Namespace hiding (Arg, Definition)
 import qualified Glucose.Namespace as NS
 import Glucose.TypeChecker.TypeCheckError
 import Glucose.TypeChecker.Unify
+import Glucose.Unique
 import Glucose.VarGen
 
 data TypeChecker f = TypeChecker
   { _namespace :: Namespace f
   , _constructors :: Map (Identifier, Int) (f Identifier)
   , _checking :: Set Identifier
-  , _nextVar :: VarGen
+  , _lastUnique :: Unique
   , _unchecked :: Map Identifier (Desugared f Definition) }
 
 makeLenses ''TypeChecker
@@ -36,7 +37,7 @@ makeLenses ''TypeChecker
 mkTypeChecker :: (Comonad f, MonadError (TypeCheckError f) m) => [Desugared f Definition] -> m (TypeChecker f)
 mkTypeChecker defs = do
   unchecked <- bindings duplicateDefinition (identify . extract) defs
-  pure $ TypeChecker emptyNamespace Map.empty Set.empty mkVarGen unchecked
+  pure $ TypeChecker emptyNamespace Map.empty Set.empty mkUnique unchecked
 
 type TypeCheck f m a = (Comonad f, Traversable f, MonadError (TypeCheckError f) m) => StateT (TypeChecker f) m a
 
@@ -54,10 +55,9 @@ typeCheckDefinition def = define (identify $ extract def) <=< for def $ \case
     recursive <- uses checking . elem $ extract name
     when recursive . throwError $ RecursiveDefinition name
     startChecking $ extract name
-    nextVar .= mkVarGen
     checked <- typeCheckExpression value
-    nextVar .= mkVarGen
-    Definition name <$> traverse (bindTypes newVar . unboxReturnType) checked
+    let finaliseTypes = flip evalState mkVarGen . bindTypes (state genVar) . unboxReturnType
+    pure $ Definition name (finaliseTypes <$> checked)
   Constructor name typeName index -> do
     let key = (extract typeName, index)
     modifyingM constructors . Map.insertOr key typeName $ duplicateDefinition typeName
@@ -70,7 +70,8 @@ typeCheckExpression expr = for expr $ \case
     referenced <- uses namespace $ fmap snd . lookupVariable identifier
     maybe (typeCheckIdentifier $ identifier <$ expr) referenceVariable referenced
   Lambda arg def -> do
-    pushArgs . pure =<< traverse typeCheckArg arg
+    let checkedArg = evalState (traverse (typeCheckArg $ state genVar) arg) mkVarGen
+    pushArgs $ pure checkedArg
     typeCheckedExpr <- notLambda =<< typeCheckExpression def
     [typeCheckedArg] <- popArgs
     pure $ Lambda typeCheckedArg typeCheckedExpr
@@ -111,8 +112,8 @@ typeCheckIdentifier variable = do
   referenced <- uses unchecked . Map.lookup $ extract variable
   maybe (throwError $ UnrecognisedVariable variable) (referenceTo . extract <=< typeCheckDefinition) referenced
 
-typeCheckArg :: Arg Unchecked -> TypeCheck f m (Arg Checking)
-typeCheckArg (Arg name _) = Arg name . Type . Bound . Polymorphic <$> newVar
+typeCheckArg :: Functor f => f Identifier -> Arg Unchecked -> f (Arg Checking)
+typeCheckArg newVar (Arg name _) = Arg name . Type . Bound . Polymorphic <$> newVar
 
 startChecking :: Identifier -> TypeCheck f m ()
 startChecking name = checking %= Set.insert name
@@ -152,8 +153,8 @@ handlingDuplicates declarer value = either (duplicateDefinition value) pure . de
 duplicateDefinition :: (Functor f, Bound f a, Bound f b, MonadError (TypeCheckError f) m) => a -> b -> m c
 duplicateDefinition new = throwError . DuplicateDefinition (identifier new) . void . identifier
 
-newVar :: TypeCheck f m Identifier
-newVar = nextVar %%= genVar
+newVar :: TypeCheck f m Unique
+newVar = lastUnique <%= nextUnique
 
 referenceVariable :: Variable f -> TypeCheck f m (Expression Checking f)
 referenceVariable (NS.Definition def) = referenceTo $ extract def
@@ -165,5 +166,5 @@ referenceTo def = freeTypes newVar $ Reference (Global . extract $ identifier de
 referenceArg :: Arg Checking -> Expression Checking f
 referenceArg (Arg name ty) = Reference (Local name) ty
 
-checkingType :: Applicative f => f Identifier -> Type Unchecked -> f (Type Checking)
-checkingType = typeVariables . const . (Any <$)
+checkingType :: Applicative f => f Unique -> Type Unchecked -> f (Type Checking)
+checkingType = typeVariables . const . (Any <$>)

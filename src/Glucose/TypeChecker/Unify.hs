@@ -12,8 +12,8 @@ import Glucose.VarGen
 unify :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m)
  => Type Checking -> f (Type Checking) -> m (Type Checking -> Type Checking)
 unify expected actual = maybe (throwError $ typeMismatch expected actual) pure $ go expected (extract actual) where
-  go a AnyType = pure $ replace AnyType a
-  go AnyType b = pure $ replace AnyType b
+  go a b@(Type Any{}) = pure $ replace b a
+  go a@(Type Any{}) b = pure $ replace a b
   go a b@FreeType{} = pure $ replace b (a & dataType %~ boxed)
   go a@FreeType{} b = pure $ replace a (b & dataType %~ boxed)
   go a b@(BoundType Polymorphic{}) = pure $ replace b (a & dataType %~ unboxed)
@@ -29,4 +29,5 @@ replace :: Type Checking -> Type Checking -> Type Checking -> Type Checking
 replace from to = recursing types %~ \a -> if a == from then to else a
 
 typeMismatch :: Traversable f => Type Checking -> f (Type Checking) -> TypeCheckError f
-typeMismatch a b = uncurry TypeMismatch $ evalState (remap (beside bind (traversed . bind)) (state genVar) (a, b)) mkVarGen
+typeMismatch a b = TypeMismatch (remapTypes a) (remapTypes <$> b)
+  where remapTypes = flip evalState mkVarGen . remap bind (state genVar)

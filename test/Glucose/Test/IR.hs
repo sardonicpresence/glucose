@@ -3,6 +3,7 @@ module Glucose.Test.IR where
 import Glucose.Format ()
 import Glucose.IR
 import Glucose.Test.Identifier ()
+import Glucose.Test.Unique ()
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
@@ -34,11 +35,15 @@ instance Arbitrary Monomorphic where
     , Function UnknownArity <$> fmap monomorphic arbitrary <*> fmap monomorphic arbitrary
     ]
 
+isFree :: Type Checking -> Bool
+isFree FreeType{} = True
+isFree _ = False
+
 isBound :: Type Checking -> Bool
-isBound (Type Bound{}) = True
+isBound BoundType{} = True
 isBound _ = False
 
 hasStructure :: Type Checking -> Bool
-hasStructure (Type Free{}) = False
-hasStructure (Type (Bound Polymorphic{})) = False
+hasStructure FreeType{} = False
+hasStructure (BoundType Polymorphic{}) = False
 hasStructure _ = True

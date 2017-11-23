@@ -18,38 +18,55 @@ spec = describe "unify" $ do
     (t, t) `unifiesTo` t
   it "fails to unify two distinct tpes" $ property $ \(Monomorphic a) (Monomorphic b) -> a /= b ==>
     failsToUnify (a, b)
+  it "unifies two anyType type variables" $ property $ \a b ->
+    (anyType a, anyType b) `unifiesTo` anyType a .||.
+    (anyType a, anyType b) `unifiesTo` anyType b
+  it "replaces an anyType type variable with a free type" $ property $ \t -> isFree t ==>
+    (t, anyType 'a') `unifyTo` (t, t) .&&.
+    (anyType 'a', t) `unifyTo` (t, t)
+  it "replaces an anyType type variable with a bound type" $ property $ \t -> isBound t ==>
+    (t, anyType 'a') `unifyTo` (t, t) .&&.
+    (anyType 'a', t) `unifyTo` (t, t)
   it "unifies two free type variables" $ property $ \a b ->
     (free a, free b) `unifiesTo` free a .||.
     (free a, free b) `unifiesTo` free b
   it "replaces a free type variable with a bound type" $ property $ \t -> isBound t ==>
-    (t, free "a") `unifyTo` (t, box t) .&&.
-    (free "a", t) `unifyTo` (box t, t)
+    (t, free 'a') `unifyTo` (t, box t) .&&.
+    (free 'a', t) `unifyTo` (box t, t)
   it "unifies two bound type variables" $ property $ \a b ->
     (bound a, bound b) `unifiesTo` bound a .||.
     (bound a, bound b) `unifiesTo` bound b
   it "replaces a bound type variable with a structured type" $ property $ \t -> hasStructure t ==>
-    (t, bound "a") `unifyTo` (t, unbox t) .&&.
-    (bound "a", t) `unifyTo` (unbox t, t)
+    (t, bound 'a') `unifyTo` (t, unbox t) .&&.
+    (bound 'a', t) `unifyTo` (unbox t, t)
   it "replaces a polymorphic function with a concrete one" $ property $ \(Monomorphic s) (Monomorphic t) ->
-    let a = free "a"; b = free "b" in
+    let a = free 'a'; b = free 'b' in
     (function s t, function a b) `unifyTo` (function s t, function (box s) (box t)) .&&.
     (function s b, function a t) `unifyTo` (function s (box t), function (box s) t) .&&.
     (function a t, function s b) `unifyTo` (function (box s) t, function s (box t)) .&&.
     (function a b, function s t) `unifyTo` (function (box s) (box t), function s t)
   it "correctly unifies nested functions" $ property $ \(Monomorphic q) (Monomorphic r) (Monomorphic s) (Monomorphic t) ->
-    let [a, b, c, d] = map free ["a", "b", "c", "d"] in
+    let [a, b, c, d] = map free ['a', 'b', 'c', 'd'] in
     (function (function a q) (function (function r r) b), function (function s c) (function d t)) `unifyTo`
     (function (function (box s) q) (function (function r r) (box t)), function (function s (box q)) (function (function r r) t))
   it "binds all free type variable sites" $ property $ \t -> isBound t ==>
-    let [a, b, c, d] = map free ["a", "b", "c", "d"] in
+    let [a, b, c, d] = map free ['a', 'b', 'c', 'd'] in
     (function a a, function t b) `unifyTo` (function (box t) (box t), function t (box t)) .&&.
     (function a a, function b t) `unifyTo` (function (box t) (box t), function (box t) t) .&&.
     (function t b, function a a) `unifyTo` (function t (box t), function (box t) (box t)) .&&.
     (function b t, function a a) `unifyTo` (function (box t) t, function (box t) (box t)) .&&.
     (function (function a b) (function b a), function (function t c) (function d d)) `unifyTo`
     (function (function (box t) (box t)) (function (box t) (box t)), function (function t (box t)) (function (box t) (box t)))
+  it "binds all any type variable sites" $ property $ \t -> isBound t ==>
+    let [a, b, c, d] = map anyType ['a', 'b', 'c', 'd'] in
+    (function a a, function t b) `unifyTo` (function t t, function t t) .&&.
+    (function a a, function b t) `unifyTo` (function t t, function t t) .&&.
+    (function t b, function a a) `unifyTo` (function t t, function t t) .&&.
+    (function b t, function a a) `unifyTo` (function t t, function t t) .&&.
+    (function (function a b) (function b a), function (function t c) (function d d)) `unifyTo`
+    (function (function t t) (function t t), function (function t t) (function t t))
   it "replaces all bound type variable sites" $ property $ \(Monomorphic t) ->
-    let [a, b, c, d] = map bound ["a", "b", "c", "d"] in
+    let [a, b, c, d] = map bound ['a', 'b', 'c', 'd'] in
     (function a a, function t b) `unifyTo` (function (unbox t) (unbox t), function t (unbox t)) .&&.
     (function a a, function b t) `unifyTo` (function (unbox t) (unbox t), function (unbox t) t) .&&.
     (function t b, function a a) `unifyTo` (function t (unbox t), function (unbox t) (unbox t)) .&&.

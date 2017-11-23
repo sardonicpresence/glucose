@@ -52,8 +52,7 @@ spec = describe "typeCheck" $ do
     let input = "const=\\a->\\b->a"
      in typeCheck input `shouldErrorWith` TypeCheckError (LocalLambda $ () `at` "1:11@10-1:15@14")
   describe "infers the most general type for simple functions (with normalised polymorphic type names)" $ do
-    let a = Polymorphic "a"
-    let b = Polymorphic "b"
+    let a = "a"; b = "b"
     it "does so for the identity function" $
       typeCheck' "f=\\a->a" `shouldBe` Right (Module
         [ function' "f" "a" a $ reference' (Local "a") a
@@ -95,6 +94,13 @@ spec = describe "typeCheck" $ do
         , function' "g" "h" (Unboxed Integer --> a) $
             apply (reference' (Local "h") (Unboxed Integer --> a)) (pure . Literal $ IntegerLiteral 3) a
         ])
+  it "produces the most general type for chained application" $ do
+    let a = "a"; b = "b"
+    typeCheck' "id=\\a->a\ntest=\\f->f id 3" `shouldBe` Right (Module
+      [ function' "id" "a" a $ local' "a" a
+      , function' "test" "f" ((a --> a) --> Unboxed Integer --> b) $
+          apply' (apply' (local' "f") (global' "id") (a --> a)) (const $ integer' 3) (Unboxed Integer) b
+      ])
   describe "errors on function application on non-functions" $ do
     it "does so for literals" $
       typeCheck' "f=\\b->3 b" `shouldErrorWith` expectedFunction "a" "b" (Unboxed Integer `at` "1:7@6")
@@ -110,7 +116,7 @@ spec = describe "typeCheck" $ do
     it "does so passing a function of the wrong type" $
       typeCheck' "f=\\g->g 1\ng=\\f->f 2\nh=\\a->f g" `shouldErrorWith` typeMismatch
         (Unboxed Integer --> "a")
-        ((Unboxed Integer --> "b") --> "b" `at` "3:9@28")
+        ((Unboxed Integer --> "a") --> "a" `at` "3:9@28")
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise

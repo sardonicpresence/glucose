@@ -46,9 +46,8 @@ instance FormattableFunctor f (TypeF Unchecked) where
   fformat _ Untyped = mempty
 
 instance ProvidesFormat TypeFormat f => FormattableFunctor f (TypeF Checking) where
-  fformat _ Any = "*"
-  fformat f (Free name) = formatIf CodegenType ("*" <>) f name
   fformat f (Bound ty) = format f ty
+  fformat _ _ = "*"
 
 instance FormattableFunctor f (TypeF Checked) where
   fformat f (Checked ty) = format f ty
