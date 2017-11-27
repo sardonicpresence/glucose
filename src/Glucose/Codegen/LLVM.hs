@@ -80,10 +80,11 @@ literal (IR.FloatLiteral n) = f64 n
 -- * Function application
 
 fullApplication :: Comonad f => LLVM.Expression -> LLVM.Type -> Call (IR.Expression f) -> LLVM LLVM.Expression
-fullApplication f retType args = do
+fullApplication f _retType args = do
   let prepareArg (ty, arg) = coerce (llvmType ty) =<< expression arg
   preparedArgs <- traverse prepareArg args
-  coerce retType =<< LLVM.call f preparedArgs
+  {- coerce retType =<< -} -- No need to coerce return-types yet, without closures
+  LLVM.call f preparedArgs
 
 partialApplication = error "Partial application in codegen!"
 
@@ -96,7 +97,7 @@ coerce ty val = case (typeRep $ LLVM.typeOf val, typeRep ty) of
   (BoxRep, I32Rep) -> ptrtoint val ty
   (BoxRep, F64Rep) -> flip bitcast ty =<< ptrtoint val size
   (from, to) | from == to -> bitcast val ty
-  _ -> error $ "Invalid cast from " ++ show val ++ " to " ++ show ty
+  _ -> error $ "Invalid cast from " ++ show (LLVM.typeOf val) ++ " to " ++ show ty
 
 llvmType :: IR.Type -> LLVM.Type
 llvmType (Type (Checked ty)) = case ty of
@@ -105,10 +106,10 @@ llvmType (Type (Checked ty)) = case ty of
   Boxed{} -> box
   Polymorphic{} -> box
   ADT{} -> LLVM.I 32
-  IR.Function UnknownArity _ _ -> box
+  IR.Function UnknownArity from to -> llvmType . Type . Checked $ IR.Function (Arity 1) from to -- TODO: temporarily: box
   IR.Function (Arity n) (valueType . llvmType -> from) (llvmType -> to) -> Ptr $ case to of
     Ptr (LLVM.Function f as) -> if n == 1
-      then LLVM.Function box [from]
+      then LLVM.Function to [from]
       else LLVM.Function f (from : as)
     f -> LLVM.Function f [from]
 

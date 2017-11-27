@@ -43,13 +43,22 @@ spec = describe "LLVM codegen" $ do
       , function' "call1" "f" (Unboxed Integer --> a) $ apply' (local' "f") (const $ integer' 1) (Unboxed Integer) a ]
         `shouldBe`
       [ functionDefinition "id" [LLVM.Arg "a" box] $ ret (LocalReference "a" box)
-      , functionDefinition "const" [LLVM.Arg "a" box] $ ret (GlobalReference "id" . Ptr $ LLVM.Function box [box] )
+      , functionDefinition "const" [LLVM.Arg "a" box] $ ret (GlobalReference "id" $ box ~~> box)
       , functionDefinition "three" [LLVM.Arg "a" box] $ do
           arg <- inttoptr (i32 3) box -- Primitive arguments passed as boxes via bitcast
-          result <- call FastCC (GlobalReference "id" . Ptr $ LLVM.Function box [box]) [arg]
+          result <- call FastCC (GlobalReference "id" $ box ~~> box) [arg]
           ret =<< ptrtoint result (I 32)
-      , functionDefinition "call1" [LLVM.Arg "f" . Ptr $ LLVM.Function box [I 32]] $
-          ret =<< call FastCC (LocalReference "f" . Ptr $ LLVM.Function box [I 32]) [i32 1]
+      , functionDefinition "call1" [LLVM.Arg "f" $ I 32 ~~> box] $
+          ret =<< call FastCC (LocalReference "f" $ I 32 ~~> box) [i32 1]
+      ]
+  it "compiles chained application correctly" $
+    codegenDefinitions
+      [ function' "test" "f" ((a --> a) --> Unboxed Integer --> b) $ apply' (apply' (local' "f") (global' "id") (a --> a)) (global' "b") (Unboxed Integer) b ]
+        `shouldBe`
+      [ functionDefinition "test" [LLVM.Arg "f" $ (box ~~> box) ~~> I 32 ~~> box] $ do
+          g <- call FastCC (LocalReference "f" $ (box ~~> box) ~~> I 32 ~~> box) [GlobalReference "id" $ box ~~> box]
+          h <- load $ GlobalReference "b" . Ptr $ I 32
+          ret =<< call FastCC g [h]
       ]
 
 codegenDefinitions :: [Identity (Definition Identity)] -> [Global]
@@ -59,3 +68,6 @@ alignment = Alignment 0
 target = fromJust $ parseTriple "x86_64-pc-mingw32"
 
 functionDefinition f as = runIdentity . singleFunctionDefinition (Name f) External FastCC as (FunctionAttributes Unnamed [] [0] alignment)
+
+infixr 8 ~~>
+from ~~> to = Ptr $ LLVM.Function to [from]
