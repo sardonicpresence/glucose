@@ -125,6 +125,11 @@ inttoptr = convert IntToPtr
 trunc = convert Trunc
 zext = convert Zext
 
+-- TODO: Currently specific to double-precision floats
+fptoptr, ptrtofp :: Monad m => Expression -> Type -> LLVMT m Expression
+fptoptr a ty = flip inttoptr ty =<< bitcast a (I 64)
+ptrtofp p ty = flip bitcast ty =<< ptrtoint p (I 64)
+
 convert :: Monad m => ConversionOp -> Expression -> Type -> LLVMT m Expression
 convert _ a ty | typeOf a == ty = pure a
 convert op a ty = assignNew $ Convert op a ty

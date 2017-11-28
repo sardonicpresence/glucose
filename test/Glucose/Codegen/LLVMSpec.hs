@@ -17,7 +17,7 @@ import LLVM.Name
 
 spec :: Spec
 spec = describe "LLVM codegen" $ do
-  let a = "a"; b = "b"
+  let a = "a"; b = "b"; c = "c"
   it "compiles an empty module" $
     codegenModule target (IR.Module [] :: IR.Module Identity) `shouldBe` LLVM.Module (llvmTarget target) []
   it "compiles global numeric constant definitions correctly" $
@@ -50,6 +50,37 @@ spec = describe "LLVM codegen" $ do
           ret =<< ptrtoint result (I 32)
       , functionDefinition "call1" [LLVM.Arg "f" $ I 32 ~~> box] $
           ret =<< call FastCC (LocalReference "f" $ I 32 ~~> box) [i32 1]
+      ]
+  it "inserts loads for global references (when necessary)" $
+    codegenDefinitions
+      [ function' "test" "f" (a --> a) $ global' "a" (Unboxed Integer)
+      , function' "test2" "f" (a --> a) $ global' "a" (Unboxed Float)
+      , function' "test3" "f" (a --> a) $ global' "a" (ADT "A")
+      , function' "test4" "f" (a --> a) $ global' "a" (b --> c) ]
+        `shouldBe`
+      [ functionDefinition "test" [LLVM.Arg "f" $ box ~~> box] $
+          ret =<< load (GlobalReference "a" . Ptr $ I 32)
+      , functionDefinition "test2" [LLVM.Arg "f" $ box ~~> box] $
+          ret =<< load (GlobalReference "a" . Ptr $ F64)
+      , functionDefinition "test3" [LLVM.Arg "f" $ box ~~> box] $
+          ret =<< load (GlobalReference "a" . Ptr $ I 32)
+      , functionDefinition "test4" [LLVM.Arg "f" $ box ~~> box] $
+          ret (GlobalReference "a" $ box ~~> box)
+      ]
+  it "bitcasts primitives to/from boxes when passed/received as polymorphic arguments/return-values" $
+    codegenDefinitions
+      [ function' "test" "f" (a --> a) $ apply' (local' "f") (const $ integer' 13) (Boxed Integer) (Boxed Float)
+      , function' "test2" "f" (a --> a) $ apply' (local' "f") (const $ float' 9.8) (Boxed Float) (Boxed Integer)
+      ]
+        `shouldBe`
+      [ functionDefinition "test" [LLVM.Arg "f" $ box ~~> box] $ do
+          arg <- inttoptr (i32 13) box
+          result <- call FastCC (LocalReference "f" $ box ~~> box) [arg]
+          ret =<< ptrtofp result F64
+      , functionDefinition "test2" [LLVM.Arg "f" $ box ~~> box] $ do
+          arg <- fptoptr (f64 9.8) box
+          result <- call FastCC (LocalReference "f" $ box ~~> box) [arg]
+          ret =<< ptrtoint result (I 32)
       ]
   it "compiles chained application correctly" $
     codegenDefinitions

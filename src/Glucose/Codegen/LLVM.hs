@@ -93,9 +93,9 @@ partialApplication = error "Partial application in codegen!"
 coerce :: LLVM.Type -> LLVM.Expression -> LLVM LLVM.Expression
 coerce ty val = case (typeRep $ LLVM.typeOf val, typeRep ty) of
   (I32Rep, BoxRep) -> inttoptr val ty
-  (F64Rep, BoxRep) -> flip inttoptr ty =<< bitcast val size
+  (F64Rep, BoxRep) -> fptoptr val ty
   (BoxRep, I32Rep) -> ptrtoint val ty
-  (BoxRep, F64Rep) -> flip bitcast ty =<< ptrtoint val size
+  (BoxRep, F64Rep) -> ptrtofp val ty
   (from, to) | from == to -> bitcast val ty
   _ -> error $ "Invalid cast from " ++ show (LLVM.typeOf val) ++ " to " ++ show ty
 

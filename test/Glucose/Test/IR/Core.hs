@@ -22,6 +22,9 @@ literal' = literal . pure
 integer' :: Applicative f => Int -> f (Expression ann f)
 integer' = literal . pure . IntegerLiteral
 
+float' :: Applicative f => Double -> f (Expression ann f)
+float' = literal . pure . FloatLiteral
+
 -- * With source locations
 
 constant :: (Applicative f, Comonad f) => f Text -> f Literal -> f (Definition ann f)
