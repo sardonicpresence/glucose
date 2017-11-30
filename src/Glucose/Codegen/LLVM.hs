@@ -58,9 +58,9 @@ definition (Constructor (nameOf -> name) _ index) =
 expression :: Comonad f => IR.Expression f -> LLVM LLVM.Expression
 expression (IR.Literal value) = pure $ literal value
 expression (Reference (Local (nameOf -> name)) ty) = pure $ LLVM.LocalReference name (llvmType ty)
-expression (Reference (Global (nameOf -> name)) ty) = case ty of
-  CheckedType IR.Function{} -> pure $ LLVM.GlobalReference name (llvmType ty)
-  _ -> load $ LLVM.GlobalReference name (Ptr $ llvmType ty)
+expression (Reference (Global (nameOf -> name)) ty) = case llvmType ty of
+  Ptr ty -> pure . LLVM.GlobalReference name $ Ptr ty
+  ty -> load . LLVM.GlobalReference name $ Ptr ty
 expression Lambda{} = error "Non-top-level lambda expression in codegen!"
 expression (Apply (extract -> f) (extract -> x) retTy) = do
   let (root, args) = flatten f x
@@ -80,8 +80,8 @@ literal (IR.FloatLiteral n) = f64 n
 -- * Function application
 
 fullApplication :: Comonad f => LLVM.Expression -> LLVM.Type -> Call (IR.Expression f) -> LLVM LLVM.Expression
-fullApplication f _retType args = do
-  let prepareArg (ty, arg) = coerce (llvmType ty) =<< expression arg
+fullApplication f retType args = do
+  let prepareArg (ty, arg) = coerce (valueType $ llvmType ty) =<< expression arg
   preparedArgs <- traverse prepareArg args
   {- coerce retType =<< -} -- No need to coerce return-types yet, without closures
   LLVM.call f preparedArgs
@@ -96,6 +96,8 @@ coerce ty val = case (typeRep $ LLVM.typeOf val, typeRep ty) of
   (F64Rep, BoxRep) -> fptoptr val ty
   (BoxRep, I32Rep) -> ptrtoint val ty
   (BoxRep, F64Rep) -> ptrtofp val ty
+  (FunRep{}, BoxRep) -> bitcast val ty
+  (BoxRep, FunRep{}) -> bitcast val ty
   (from, to) | from == to -> bitcast val ty
   _ -> error $ "Invalid cast from " ++ show (LLVM.typeOf val) ++ " to " ++ show ty
 
@@ -105,7 +107,7 @@ llvmType (Type (Checked ty)) = case ty of
   Unboxed Float -> LLVM.F64
   Boxed{} -> box
   Polymorphic{} -> box
-  ADT{} -> LLVM.I 32
+  ADT{} -> Ptr $ LLVM.I 32
   IR.Function UnknownArity from to -> llvmType . Type . Checked $ IR.Function (Arity 1) from to -- TODO: temporarily: box
   IR.Function (Arity n) (valueType . llvmType -> from) (llvmType -> to) -> Ptr $ case to of
     Ptr (LLVM.Function f as) -> if n == 1

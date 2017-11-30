@@ -22,7 +22,7 @@ typeRep :: Type -> Representation
 typeRep (I n) | n <= 32 = I32Rep
 typeRep (I n) = error $ show n ++ "-bit integers are not supported!"
 typeRep F64 = F64Rep
-typeRep (Ptr (Function a bs)) = FunRep (typeRep a) (map typeRep bs) -- TODO: Until we have closures
+-- typeRep (Ptr (Function a bs)) = FunRep (typeRep a) (map typeRep bs) -- TODO: Until we have closures
 typeRep _ = BoxRep
 
 repType :: Representation -> Type

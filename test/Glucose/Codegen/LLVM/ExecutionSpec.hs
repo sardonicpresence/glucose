@@ -4,15 +4,20 @@ import Test.Prelude
 import Test.Executable
 
 import Data.Maybe (fromJust)
-import Data.Text (Text, unpack)
+import Data.Text (Text, pack, unpack)
 import Glucose.Compiler
 import Glucose.Codegen
 import Glucose.Codegen.Target
 
 spec :: Spec
-spec = describe "LLVM codegen" $ do
-  it "can run a trivial execution test" $
-    testExitCode 123 "test = \\a -> 123"
+spec = describe "LLVM codegen" $
+  it "can generate an executable example" $
+    testExitCode 3 . pack $ unlines
+      [ "type Colour = Red | Blue | Green"
+      , "red = Red"
+      , "three = \\a -> 3"
+      , "id = \\a -> a"
+      , "test = \\a -> id three red" ]
 
 testExitCode :: Int -> Text -> Expectation
 testExitCode exitcode source =
