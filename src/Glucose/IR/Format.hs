@@ -24,23 +24,20 @@ instance ProvidesFormat ReferenceKindFormat f => FormattableFunctor f ReferenceK
 data TypeFormat = GlucoseType | CodegenType deriving (Eq)
 
 instance FormatsAnnotations f ann => Formattable f (DataType (Type ann)) where
-  format f (Unboxed ty) = format f ty
-  format f (Boxed ty) = formatIf CodegenType (within "{" "}") f ty
+  format _ Integer = "Int"
+  format _ Float = "Float"
   format f (ADT name) = formatIf CodegenType (<> "#") f name
   format f (Function arity from to) = from' <> format f arity <> format f to where
     from' = case from ^? dataType of
               Just Function{} -> "(" <> format f from <> ")"
               _ -> format f from
   format f (Polymorphic ty) = format f ty
+  format f (Constrained ty) = formatIf CodegenType (within "{" "}") f ty
 
 instance ProvidesFormat TypeFormat f => Formattable f Arity where
   format f a = case (getFormat f, a) of
-    (GlucoseType, Arity n) -> " -" <> pack (show n) <> "> "
+    (CodegenType, Arity n) -> " -" <> pack (show n) <> "> "
     _ -> " -> "
-
-instance Formattable f Primitive where
-  format _ Integer = "Int"
-  format _ Float = "Float"
 
 instance FormattableFunctor f (TypeF Unchecked) where
   fformat _ Untyped = mempty

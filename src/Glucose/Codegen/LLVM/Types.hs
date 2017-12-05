@@ -15,21 +15,21 @@ import LLVM.Name
 -- * Representations
 
 data Representation = I32Rep | F64Rep | BoxRep
-                    | FunRep Representation [Representation] -- TODO: Until we have closures
+                    | FunRep Representation [Representation]
   deriving (Eq, Ord)
 
 typeRep :: Type -> Representation
 typeRep (I n) | n <= 32 = I32Rep
 typeRep (I n) = error $ show n ++ "-bit integers are not supported!"
 typeRep F64 = F64Rep
--- typeRep (Ptr (Function a bs)) = FunRep (typeRep a) (map typeRep bs) -- TODO: Until we have closures
+typeRep (Ptr (Function a bs)) = FunRep (typeRep a) (map typeRep bs)
 typeRep _ = BoxRep
 
 repType :: Representation -> Type
 repType I32Rep = I 32
 repType F64Rep = F64
 repType BoxRep = box
-repType (FunRep a bs) = Ptr $ Function (repType a) (map repType bs) -- TODO: Until we have closures
+repType (FunRep a bs) = Ptr $ Function (repType a) (map repType bs)
 
 valueType :: Type -> Type
 valueType = repType . typeRep

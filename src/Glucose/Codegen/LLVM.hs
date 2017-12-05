@@ -63,7 +63,9 @@ expression (Reference (Global (nameOf -> name)) ty) = case llvmType ty of
   ty -> load . LLVM.GlobalReference name $ Ptr ty
 expression Lambda{} = error "Non-top-level lambda expression in codegen!"
 expression (Apply (extract -> f) (extract -> x) retTy) = do
-  let (root, args) = flatten f x
+  -- let (root, args) = flatten f x
+  let root = f
+      args = [x]
   let (Application result calls partial) = groupApplication (IR.typeOf root) args
   let returnTypes = replicate (length calls - 1) box ++ [maybe box (const $ llvmType result) partial]
   root' <- expression root
@@ -80,10 +82,10 @@ literal (IR.FloatLiteral n) = f64 n
 -- * Function application
 
 fullApplication :: Comonad f => LLVM.Expression -> LLVM.Type -> Call (IR.Expression f) -> LLVM LLVM.Expression
-fullApplication f retType args = do
+fullApplication f _retType args = do
   let prepareArg (ty, arg) = coerce (valueType $ llvmType ty) =<< expression arg
   preparedArgs <- traverse prepareArg args
-  {- coerce retType =<< -} -- No need to coerce return-types yet, without closures
+  {- coerce retType =<< -}
   LLVM.call f preparedArgs
 
 partialApplication = error "Partial application in codegen!"
@@ -103,9 +105,9 @@ coerce ty val = case (typeRep $ LLVM.typeOf val, typeRep ty) of
 
 llvmType :: IR.Type -> LLVM.Type
 llvmType (Type (Checked ty)) = case ty of
-  Unboxed Integer -> LLVM.I 32
-  Unboxed Float -> LLVM.F64
-  Boxed{} -> box
+  Integer -> LLVM.I 32
+  Float -> LLVM.F64
+  Constrained{} -> box
   Polymorphic{} -> box
   ADT{} -> Ptr $ LLVM.I 32
   IR.Function UnknownArity from to -> llvmType . Type . Checked $ IR.Function (Arity 1) from to -- TODO: temporarily: box

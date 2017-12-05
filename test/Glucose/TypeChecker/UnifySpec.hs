@@ -48,7 +48,7 @@ spec = describe "unify" $ do
   it "correctly unifies nested functions" $ property $ \(Monomorphic q) (Monomorphic r) (Monomorphic s) (Monomorphic t) ->
     let [a, b, c, d] = map free ['a', 'b', 'c', 'd'] in
     (function (function a q) (function (function r r) b), function (function s c) (function d t)) `unifyTo`
-    (function (function (box s) q) (function (function r r) (box t)), function (function s (box q)) (function (function r r) t))
+    (function (function (box s) q) (function (function r r) (box t)), function (function s (box q)) (function (box $ function r r) t))
   it "binds all free type variable sites" $ property $ \t -> isBound t ==>
     let [a, b, c, d] = map free ['a', 'b', 'c', 'd'] in
     (function a a, function t b) `unifyTo` (function (box t) (box t), function t (box t)) .&&.

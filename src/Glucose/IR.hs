@@ -3,7 +3,7 @@ module Glucose.IR
 (
   Module(..), Definition(..), Expression(..), Literal(..), Arg(..),
   Annotations(..), Unchecked, Checking, Checked, Type(..), TypeF(..),
-  Primitive(..), DataType(..), Arity(..), ReferenceKind(..),
+  DataType(..), Arity(..), ReferenceKind(..),
   pattern AnyType, pattern BoundType, pattern FreeType, pattern CheckedType,
   dataType, typeVariables, free, uncheck, bind, types, bindings, boxed, unboxed, freeTypes, bindTypes, remap,
   Typed(..), typeAnnotations, replaceType, argType
@@ -20,7 +20,6 @@ import Data.String
 import Data.Traversable
 import Glucose.Unique
 import Glucose.Identifier
-import Unsafe.Coerce (unsafeCoerce)
 
 newtype Module ann f = Module [f (Definition ann f)]
 deriving instance (Eq (f (Definition ann f))) => Eq (Module ann f)
@@ -82,13 +81,11 @@ instance Comonad ReferenceKind where
 
 -- * Types
 
-data Primitive = Integer | Float
-  deriving (Eq, Ord)
-
 data Arity = UnknownArity | Arity Int
   deriving (Eq, Ord)
 
-data DataType t = Unboxed Primitive | Boxed Primitive | ADT Identifier | Function Arity t t | Polymorphic Identifier
+data DataType t = Integer | Float | ADT Identifier | Function Arity t t | Polymorphic Identifier
+                | Constrained (DataType t)
   deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 instance IsString (DataType t) where
@@ -129,7 +126,10 @@ typeVariables :: (Annotations from, Annotations to)
 typeVariables f = _Type $ either (review typeF <$>) ((fmap.fmap) Polymorphic . f) . traverse typeVariable where
   typeVariable (Polymorphic name) = Right name
   typeVariable (Function arity a b) = Left $ Function arity <$> typeVariables f a <*> typeVariables f b
-  typeVariable ty = Left . pure $ unsafeCoerce ty
+  typeVariable (Constrained ty) = Left $ Constrained <$> either id (error "Constrained polymorphic type?") (typeVariable ty)
+  typeVariable Integer = Left $ pure Integer
+  typeVariable Float = Left $ pure Float
+  typeVariable (ADT n) = Left $ pure (ADT n)
 
 {- | Traversal mapping checked type variables to free type variables. -}
 free :: Traversal (Type Checked) (Type Checking) Identifier Unique
@@ -148,15 +148,20 @@ types = dataType . dataTypes
 
 dataTypes :: Traversal (DataType (Type from)) (DataType (Type to)) (Type from) (Type to)
 dataTypes f = \case
+  Integer -> pure Integer
+  Float -> pure Float
+  ADT n -> pure $ ADT n
+  Polymorphic n -> pure $ Polymorphic n
   Function arity a b -> Function arity <$> f a <*> f b
-  ty -> pure $ unsafeCoerce ty
+  Constrained ty -> Constrained <$> dataTypes f ty
 
 boxed :: DataType ty -> DataType ty
-boxed (Unboxed ty) = Boxed ty
-boxed a = a
+boxed ty@Constrained{} = ty
+boxed ty@Polymorphic{} = ty
+boxed ty = Constrained ty
 
 unboxed :: DataType ty -> DataType ty
-unboxed (Boxed ty) = Unboxed ty
+unboxed (Constrained ty) = ty
 unboxed a = a
 
 freeTypes :: (Applicative m, Traversable f) => m Unique -> Expression Checked f -> m (Expression Checking f)
@@ -182,8 +187,8 @@ instance (Comonad f, Annotations ann) => Typed ann (Definition ann f) where
   typeOf (Constructor _ typeName _) = dataType # ADT (extract typeName)
 
 instance (Comonad f, Annotations ann) => Typed ann (Expression ann f) where
-  typeOf (Literal (IntegerLiteral _)) = dataType # Unboxed Integer
-  typeOf (Literal (FloatLiteral _)) = dataType # Unboxed Float
+  typeOf (Literal (IntegerLiteral _)) = dataType # Integer
+  typeOf (Literal (FloatLiteral _)) = dataType # Float
   typeOf (Reference _ ty) = ty
   typeOf (Lambda (pure -> args) expr) = go (length args) args where
     go _ [] = typeOf (extract expr) & dataType %~ unboxed

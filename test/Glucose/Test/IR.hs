@@ -8,19 +8,22 @@ import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
 instance Arbitrary (Type Checking) where
-  arbitrary = Type <$> frequency [ (1, Free <$> arbitrary), (5, Bound <$> arbitrary) ]
+  arbitrary = Type <$> frequency [ (1, Any <$> arbitrary), (1, Free <$> arbitrary), (5, Bound <$> arbitrary) ]
 
 instance Arbitrary ty => Arbitrary (DataType ty) where
   arbitrary = oneof
-    [ Unboxed <$> arbitrary
-    , Boxed <$> arbitrary
+    [ pure Integer
+    , pure Float
     , ADT <$> arbitrary
     , Polymorphic <$> arbitrary
+    , Constrained <$> oneof
+      [ pure Integer
+      , pure Float
+      , ADT <$> arbitrary
+      , Function UnknownArity <$> arbitrary <*> arbitrary
+      ]
     , Function UnknownArity <$> arbitrary <*> arbitrary
     ]
-
-instance Arbitrary Primitive where
-  arbitrary = oneof [ pure Integer, pure Float ]
 
 newtype Monomorphic = Monomorphic { monomorphic :: Type Checking }
 
@@ -28,12 +31,19 @@ instance Show Monomorphic where
   show (Monomorphic ty) = show ty
 
 instance Arbitrary Monomorphic where
-  arbitrary = Monomorphic . Type . Bound <$> oneof
-    [ Unboxed <$> arbitrary
-    , Boxed <$> arbitrary
-    , ADT <$> arbitrary
-    , Function UnknownArity <$> fmap monomorphic arbitrary <*> fmap monomorphic arbitrary
-    ]
+  arbitrary = Monomorphic . Type . Bound <$> arbitraryMonomorphic where
+    arbitraryMonomorphic = oneof
+      [ pure Integer
+      , pure Float
+      , ADT <$> arbitrary
+      , Constrained <$> oneof
+        [ pure Integer
+        , pure Float
+        , ADT <$> arbitrary
+        , Function UnknownArity <$> fmap monomorphic arbitrary <*> fmap monomorphic arbitrary
+        ]
+      , Function UnknownArity <$> fmap monomorphic arbitrary <*> fmap monomorphic arbitrary
+      ]
 
 isFree :: Type Checking -> Bool
 isFree FreeType{} = True
@@ -44,6 +54,7 @@ isBound BoundType{} = True
 isBound _ = False
 
 hasStructure :: Type Checking -> Bool
+hasStructure AnyType{} = False
 hasStructure FreeType{} = False
 hasStructure (BoundType Polymorphic{}) = False
 hasStructure _ = True

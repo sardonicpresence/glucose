@@ -9,6 +9,7 @@ where
 
 import Control.Applicative
 import Control.Comonad.Utils
+import Control.Lens
 import Data.List (intercalate)
 import Data.Semigroup (Semigroup(..))
 import qualified Data.Set as Set
@@ -57,8 +58,9 @@ partialApplication result arity = Application result [] . Just . Partial arity
 groupApplication :: Type -> [a] -> Application a
 groupApplication ty = go ty [] where
   go ty [] [] = Application ty [] Nothing
-  go ty@(CheckedType (Function (Arity arity) _ _)) as [] | arity > 0 = partialApplication ty arity as
-  go (CheckedType (Function arity a b)) as (r:rs) =
+  go ty@((^? dataType . to IR.unboxed) -> Just (Function (Arity arity) _ _)) as [] | arity > 0 =
+    partialApplication ty arity as
+  go ((^? dataType . to IR.unboxed) -> Just (Function arity a b)) as (r:rs) =
     let as' = (a, r) : as in
     case arity of
       Arity 1 -> fullApplication b (reverse as') <> go b [] rs

@@ -26,7 +26,7 @@ spec = describe "LLVM codegen" $ do
       [LLVM.VariableDefinition (Name "a") LLVM.External Unnamed (i32 123) alignment,
        LLVM.VariableDefinition (Name "b") LLVM.External Unnamed (f64 3.21) alignment]
   it "compiles global aliases correctly" $
-    codegenDefinitions [alias' "a" "b" $ Unboxed Integer] `shouldBe`
+    codegenDefinitions [alias' "a" "b" Integer] `shouldBe`
       [LLVM.Alias (Name "a") LLVM.External Unnamed (GlobalReference (Name "b") (LLVM.I 32)) (LLVM.I 32)]
   it "compiles enum constructors correctly" $
     codegenDefinitions [constructor' "test" "a" 0, constructor' "test" "B" 1] `shouldBe`
@@ -39,8 +39,8 @@ spec = describe "LLVM codegen" $ do
     codegenDefinitions
       [ function' "id" "a" a $ local' "a" a
       , function' "const" "a" a $ global' "id" (b --> b)
-      , function' "three" "a" a $ apply' (global' "id") (const $ integer' 3) (Boxed Integer) (Boxed Integer)
-      , function' "call1" "f" (Unboxed Integer --> a) $ apply' (local' "f") (const $ integer' 1) (Unboxed Integer) a ]
+      , function' "three" "a" a $ apply' (global' "id") (const $ integer' 3) (Constrained Integer) (Constrained Integer)
+      , function' "call1" "f" (Integer --> a) $ apply' (local' "f") (const $ integer' 1) Integer a ]
         `shouldBe`
       [ functionDefinition "id" [LLVM.Arg "a" box] $ ret (LocalReference "a" box)
       , functionDefinition "const" [LLVM.Arg "a" box] $ ret (GlobalReference "id" $ box ~~> box)
@@ -53,8 +53,8 @@ spec = describe "LLVM codegen" $ do
       ]
   it "inserts loads for global references (when necessary)" $
     codegenDefinitions
-      [ function' "test" "f" (a --> a) $ global' "a" (Unboxed Integer)
-      , function' "test2" "f" (a --> a) $ global' "a" (Unboxed Float)
+      [ function' "test" "f" (a --> a) $ global' "a" Integer
+      , function' "test2" "f" (a --> a) $ global' "a" Float
       , function' "test3" "f" (a --> a) $ global' "a" (ADT "A")
       , function' "test4" "f" (a --> a) $ global' "a" (b --> c) ]
         `shouldBe`
@@ -63,14 +63,14 @@ spec = describe "LLVM codegen" $ do
       , functionDefinition "test2" [LLVM.Arg "f" $ box ~~> box] $
           ret =<< load (GlobalReference "a" . Ptr $ F64)
       , functionDefinition "test3" [LLVM.Arg "f" $ box ~~> box] $
-          ret =<< load (GlobalReference "a" . Ptr $ I 32)
+          ret $ GlobalReference "a" (Ptr $ I 32)
       , functionDefinition "test4" [LLVM.Arg "f" $ box ~~> box] $
-          ret (GlobalReference "a" $ box ~~> box)
+          ret $ GlobalReference "a" (box ~~> box)
       ]
   it "bitcasts primitives to/from boxes when passed/received as polymorphic arguments/return-values" $
     codegenDefinitions
-      [ function' "test" "f" (a --> a) $ apply' (local' "f") (const $ integer' 13) (Boxed Integer) (Boxed Float)
-      , function' "test2" "f" (a --> a) $ apply' (local' "f") (const $ float' 9.8) (Boxed Float) (Boxed Integer)
+      [ function' "test" "f" (a --> a) $ apply' (local' "f") (const $ integer' 13) (Constrained Integer) (Constrained Float)
+      , function' "test2" "f" (a --> a) $ apply' (local' "f") (const $ float' 9.8) (Constrained Float) (Constrained Integer)
       ]
         `shouldBe`
       [ functionDefinition "test" [LLVM.Arg "f" $ box ~~> box] $ do
@@ -84,7 +84,7 @@ spec = describe "LLVM codegen" $ do
       ]
   it "compiles chained application correctly" $
     codegenDefinitions
-      [ function' "test" "f" ((a --> a) --> Unboxed Integer --> b) $ apply' (apply' (local' "f") (global' "id") (a --> a)) (global' "b") (Unboxed Integer) b ]
+      [ function' "test" "f" ((a --> a) --> Integer --> b) $ apply' (apply' (local' "f") (global' "id") (a --> a)) (global' "b") Integer b ]
         `shouldBe`
       [ functionDefinition "test" [LLVM.Arg "f" $ (box ~~> box) ~~> I 32 ~~> box] $ do
           g <- call FastCC (LocalReference "f" $ (box ~~> box) ~~> I 32 ~~> box) [GlobalReference "id" $ box ~~> box]

@@ -81,12 +81,12 @@ typeCheckExpression expr = for expr $ \case
     ty' <- checkingType newVar ty
     unifier <- unifyApply (typeOf <$> expr') (typeOf <$> arg') ty'
     namespace . declaredArgs . traversed . argType %= unifier
-    pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty')
+    pure $ Apply (expr' <&> typeAnnotations %~ unifier) (arg' <&> typeAnnotations %~ unifier) (unifier ty' & dataType %~ unboxed)
 
 unifyApply :: (Comonad f, Traversable f, MonadError (TypeCheckError f) m)
  => f (Type Checking) -> f (Type Checking) -> Type Checking -> m (Type Checking -> Type Checking)
-unifyApply fn arg returnType  = case extract fn of
-  BoundType (Function _ a b) -> do
+unifyApply fn arg returnType  = case extract fn ^? dataType . to unboxed of
+  Just (Function _ a b) -> do
     f <- unify a arg
     g <- unify (f returnType) (f b <$ fn)
     pure $ g . f
