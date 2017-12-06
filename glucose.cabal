@@ -119,7 +119,7 @@ test-suite glucose-test
                      , Glucose.TypeChecker.UnifySpec
                      , Glucose.Codegen.JavaScriptSpec
                      , Glucose.Codegen.LLVMSpec
-                     , Glucose.Codegen.LLVM.ExecutionSpec
+                     , Glucose.Codegen.ExecutionSpec
                      , Glucose.Test.AST
                      , Glucose.Test.Identifier
                      , Glucose.Test.IR

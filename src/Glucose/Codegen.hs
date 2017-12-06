@@ -10,6 +10,11 @@ import Glucose.IR
 
 data CompilerOutput = LLVM Target | JavaScript | IR
 
+instance Show CompilerOutput where
+  show LLVM{} = "LLVM IR"
+  show JavaScript = "JavaScript"
+  show IR = "Glucose IR"
+
 type Codegen f = Module Checked f -> Text
 
 codegen :: (Comonad f, FormattableFunctor Format f) => CompilerOutput -> Codegen f

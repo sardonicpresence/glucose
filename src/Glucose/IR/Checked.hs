@@ -75,6 +75,6 @@ captures (Lambda arg value) = captures (extract value) Set.\\ Set.fromList [extr
 captures _ = mempty
 
 effectiveArity :: Type -> Int
-effectiveArity (CheckedType (Function (Arity n) _ _)) = n
-effectiveArity (CheckedType (Function _ _ b)) = 1 + effectiveArity b
+effectiveArity (CheckedType (unboxed -> Function (Arity n) _ _)) = n
+effectiveArity (CheckedType (unboxed -> Function _ _ b)) = 1 + effectiveArity b
 effectiveArity _ = 0

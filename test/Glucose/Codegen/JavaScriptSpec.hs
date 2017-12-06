@@ -58,12 +58,16 @@ spec = describe "JavaScript codegen" $ do
       [ function' "f1" "a" a $ apply' (global' "g") (local' "a") a b
       , function' "f2" "a" a $ apply' (apply' (global' "h") (local' "a") a) (global' "g") (b --> c) d
       , function' "f3" "f" (Integer --> a) $ apply' (local' "f") (const $ integer' 3) Integer a
-      , function' "f4" "f" (a --> b) $ apply' (apply' (global' "g") (local' "f") (a --> b)) (const $ integer' 3) Integer c ]
+      , function' "f4" "a" Integer $ apply (global' "id" $ Constrained Integer --> Constrained Integer) (local' "a" Integer) Integer
+      , function' "f5" "f" (a --> b) $ apply' (apply' (global' "g") (local' "f") (a --> b)) (const $ integer' 3) Integer c
+      , function' "f6" "a" Float $ apply (apply (global' "id" $ (Constrained Float --> a) --> (Constrained Float --> a)) (global' "f" $ Float --> a) (Float --> a)) (local' "a" Float) a ]
         `shouldShow` unlines
       [ "function f1(a) { return g(a) }"
       , "function f2(a) { return h(a)(g) }"
       , "function f3(f) { return f(3) }"
-      , "function f4(f) { return g(f)(3) }" ]
+      , "function f4(a) { return id(a) }"
+      , "function f5(f) { return g(f)(3) }"
+      , "function f6(a) { return id(f)(a) }" ]
   it "mangles reserved words" $
     codegenDefinitions
       [ alias' "const" "null" $ a --> b
