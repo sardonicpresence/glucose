@@ -141,8 +141,6 @@ spec = describe "typeCheck" $ do
         (Integer --> "a")
         ((Integer --> "a") --> "a" `at` "3:9@28")
 
-itDoesSo = it
-
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
 

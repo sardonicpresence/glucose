@@ -17,7 +17,8 @@ spec = describe "LLVM codegen" $
       , "red = Red"
       , "three = \\a -> 3"
       , "id = \\a -> a"
-      , "test = \\a -> id three red" ]
+      , "const = \\a -> id"
+      , "test = \\a -> const 2 three red" ]
 
 testExitCode :: Int -> Text -> Expectation
 testExitCode exitcode source =

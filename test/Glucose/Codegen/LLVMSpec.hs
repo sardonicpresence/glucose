@@ -84,12 +84,21 @@ spec = describe "LLVM codegen" $ do
       ]
   it "compiles chained application correctly" $
     codegenDefinitions
-      [ function' "test" "f" ((a --> a) --> Integer --> b) $ apply' (apply' (local' "f") (global' "id") (a --> a)) (global' "b") Integer b ]
+      [ function' "test" "f" ((a --> a) --> Integer --> b) $ apply' (apply' (local' "f") (global' "id") (a --> a)) (global' "b") Integer b
+      , function' "test2" "a" a $ apply
+          (apply (global' "id" $ Constrained (b --> Integer) --> Constrained (b --> Integer)) (global' "three" $ b --> Integer) (Constrained Integer --> Integer))
+          (integer' 3) Integer
+      ]
         `shouldBe`
       [ functionDefinition "test" [LLVM.Arg "f" $ (box ~~> box) ~~> I 32 ~~> box] $ do
           g <- call FastCC (LocalReference "f" $ (box ~~> box) ~~> I 32 ~~> box) [GlobalReference "id" $ box ~~> box]
           h <- load $ GlobalReference "b" . Ptr $ I 32
           ret =<< call FastCC g [h]
+      , functionDefinition "test2" [LLVM.Arg "a" box] $ do
+          three <- bitcast (GlobalReference "three" $ box ~~> I 32) box
+          g <- flip bitcast (box ~~> I 32) =<< call FastCC (GlobalReference "id" $ box ~~> box) [three]
+          x <- inttoptr (i32 3) box
+          ret =<< call FastCC g [x]
       ]
 
 codegenDefinitions :: [Identity (Definition Identity)] -> [Global]

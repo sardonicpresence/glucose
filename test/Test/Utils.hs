@@ -4,6 +4,9 @@ import Test.Hspec hiding (shouldBe)
 
 infixr 1 `shouldBe`, `shouldErrorContaining`, `shouldErrorWith`, `shouldShow`
 
+itDoesSo :: (HasCallStack, Example a) => String -> a -> SpecWith (Arg a)
+itDoesSo = it
+
 {-# INLINE shouldErrorContaining #-}
 shouldErrorContaining :: (Show e, Show a) => Either e a -> String -> Expectation
 shouldErrorContaining (Right a) _ = expectationFailure $ "did not fail, returned:" ++ formatResult a
