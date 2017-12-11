@@ -42,38 +42,44 @@ instance ErrorDetails (TypeChecker.TypeCheckError FromSource) where
 
 formatError :: Text -> CompileError -> Text
 formatError source = \case
-  SyntaxError (Lexer.SyntaxError loc details) -> withLocation loc $ case details of
+  SyntaxError (Lexer.SyntaxError loc details) -> withLocation (showLocation loc) $ case details of
     Lexer.SyntaxErrorDetails message context ->
       message <> " " <> context
-  ParseError (Parser.ParseError loc details) -> withLocation loc $ case details of
+  ParseError (Parser.ParseError loc details) -> withLocation (showLocation loc) $ case details of
     Parser.ParseErrorDetails unexpected expected ->
       "unexpected " <> fromUnexpected unexpected <>
       ("\nexpecting " <>) `ifNotNull` formatList (map formatEOF expected)
     where fromUnexpected = formatEOF . (showToken source <$>)
-  TypeCheckError details -> withLocation (location details) $ case details of
+  TypeCheckError details -> withLocation (showSourceRangeOf details) $ case details of
     TypeChecker.DuplicateDefinition name prevLoc ->
       "duplicate definition of '" <> fformat name <> "'\n" <>
-      "previously defined at " <> showLocation (startLocation prevLoc)
+      "previously defined at " <> showSourceRange prevLoc
     TypeChecker.UnrecognisedVariable name ->
       "unrecognised variable '" <> fformat name <> "'"
     TypeChecker.RecursiveDefinition name ->
       "recursive definition: the value of '" <> fformat name <> "' depends on itself"
-    TypeChecker.TypeMismatch a b ->
-      "type mismatch: expected '" <> format a <> "', found '" <> fformat b <> "'" -- TODO: improve
+    TypeChecker.TypeMismatch expected actual ->
+      "type mismatch: " <>
+      "expected '" <> format expected <> "', " <>
+      "found '" <> fformat actual <> "' " <>
+      "for expression '" <> showSource actual source <> "'"
+    TypeChecker.InfiniteType expected actual ->
+      "infinite type: " <> fformat actual <> " ~ " <> format expected
     TypeChecker.LocalLambda _ ->
       "lambdas can only be bound to globals"
     TypeChecker.CAF _ ->
       "unsupported constant applicative form"
   where
-    location (TypeChecker.DuplicateDefinition a _) = startLocation a
-    location (TypeChecker.UnrecognisedVariable a) = startLocation a
-    location (TypeChecker.RecursiveDefinition a) = startLocation a
-    location (TypeChecker.TypeMismatch _ a) = startLocation a
-    location (TypeChecker.LocalLambda a) = startLocation a
-    location (TypeChecker.CAF a) = startLocation a
+    showSourceRangeOf (TypeChecker.DuplicateDefinition a _) = showSourceRange a
+    showSourceRangeOf (TypeChecker.UnrecognisedVariable a) = showSourceRange a
+    showSourceRangeOf (TypeChecker.RecursiveDefinition a) = showSourceRange a
+    showSourceRangeOf (TypeChecker.TypeMismatch _ a) = showSourceRange a
+    showSourceRangeOf (TypeChecker.InfiniteType _ a) = showSourceRange a
+    showSourceRangeOf (TypeChecker.LocalLambda a) = showSourceRange a
+    showSourceRangeOf (TypeChecker.CAF a) = showSourceRange a
 
-withLocation :: Location -> Text -> Text
-withLocation loc s = showLocation loc <> ":\n" <> s <> "\n"
+withLocation :: Text -> Text -> Text
+withLocation loc s = loc <> ":\n" <> s <> "\n"
 
 format :: Format.Formattable Format.Format a => a -> Text
 format = Format.format Format.User
@@ -92,6 +98,11 @@ formatList (a:as) = a <> ", " <> formatList as
 
 ifNotNull :: (Text -> Text) -> Text -> Text
 ifNotNull f a = if Text.null a then a else f a
+
+showSourceRange :: FromSource a -> Text
+showSourceRange a = showLocation (startLocation a)
+  -- Just the start location for now
+  -- <> "-" <> showLocation (endLocation a)
 
 showLocation :: Location -> Text
 showLocation loc = pack $ show (line loc) ++ ":" ++ show (column loc)

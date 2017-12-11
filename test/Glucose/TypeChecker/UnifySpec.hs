@@ -14,7 +14,7 @@ import Glucose.TypeChecker.Unify
 
 spec :: Spec
 spec = describe "unify" $ do
-  it "unifies equal tpes unchanged" $ property $ \t ->
+  it "unifies equal types unchanged" $ property $ \t ->
     (t, t) `unifiesTo` t
   it "fails to unify two distinct tpes" $ property $ \(Monomorphic a) (Monomorphic b) -> a /= b ==>
     failsToUnify (a, b)

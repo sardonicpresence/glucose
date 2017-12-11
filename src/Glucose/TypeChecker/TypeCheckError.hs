@@ -8,6 +8,7 @@ data TypeCheckError f
   | UnrecognisedVariable (f Identifier)
   | RecursiveDefinition (f Identifier)
   | TypeMismatch (Type Checked) (f (Type Checked))
+  | InfiniteType (Type Checked) (f (Type Checked))
   | LocalLambda (f ())
   | CAF (f ())
 

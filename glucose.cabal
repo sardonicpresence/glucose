@@ -68,6 +68,7 @@ library
                      , Control.Comonad.Utils
                      , Control.Lens.Utils
                      , Control.Generalised
+                     , Data.Functor.With
                      , Data.Map.Utils
                      , Data.Format
   default-extensions:  OverloadedStrings

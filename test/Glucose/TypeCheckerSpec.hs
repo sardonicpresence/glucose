@@ -140,6 +140,8 @@ spec = describe "typeCheck" $ do
       typeCheck' "f=\\g->g 1\ng=\\f->f 2\nh=\\a->f g" `shouldErrorWith` typeMismatch
         (Integer --> "a")
         ((Integer --> "a") --> "a" `at` "3:9@28")
+  it "errors on infinite infered type" $
+    typeCheck' "test=\\f->f f" `shouldErrorWith` infiniteType (a `at` "1:10@9") (a --> b)
 
 typeCheck :: Text -> Either CompileError (Module Checked FromSource)
 typeCheck = TC.typeCheck <=< desugar <=< uncurry parse <=< tokenise
@@ -155,6 +157,9 @@ recursiveDefinition loc name = TypeCheckError $ RecursiveDefinition $ Identifier
 
 typeMismatch :: DataType (Type Checked) -> FromSource (DataType (Type Checked)) -> CompileError
 typeMismatch expected actual = TypeCheckError $ TypeMismatch (CheckedType expected) (CheckedType <$> actual)
+
+infiniteType :: FromSource (DataType (Type Checked)) -> DataType (Type Checked) -> CompileError
+infiniteType actual expected = TypeCheckError $ InfiniteType (CheckedType expected) (CheckedType <$> actual)
 
 expectedFunction :: DataType (Type Checked) -> DataType (Type Checked) -> FromSource (DataType (Type Checked)) -> CompileError
 expectedFunction from to = typeMismatch $ from --> to
