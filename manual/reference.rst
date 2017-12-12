@@ -2,8 +2,8 @@ Language Reference
 ==================
 
 The **glucose** language is presently trivial and only supports the global
-declaration of 32-bit integer and 64-bit floating-point constants, as well
-as enumeration data types.
+declaration of 32-bit integer and 64-bit floating-point constants,
+enumeration data types and non-recursive, single-argument functions.
 
 A **glucose** source file consists of zero or more definitions, each starting
 at the beginning of a line, optionally seperated by white-space. The order
@@ -61,3 +61,27 @@ more constructor identifiers separated by vertical bars e.g.
 
 Constructors and variables share a single namespace and cannot have the same
 name. Type names occupy their own namespace.
+
+Function Definitions
+--------------------
+
+Function definitions bind a single-argument lambda expression to an identifier.
+
+A function definition must be positioned at the beginning of a line and
+consist of an identifier, equals character and a single-argument lambda
+expression consisting of a ``\``, an argument identifier, a ``->`` and either
+a literal, a reference (to the argument, a global variable or an enum type
+constructor), or function application.
+
+Function application consists of an identifier referencing a function
+(an argument or function definition) and a value separated by white-space,
+where the value can be either a literal, a reference or enum type constructor.
+
+Function application can be chained and is left-associative i.e. ``f a b``
+applies the argument ``a`` to ``f``, then applies the argument ``b`` to the
+result.
+
+Example function definitions include:
+ - ``three = \a -> 3``
+ - ``id = \a -> a``
+ - ``applyRed = \f -> f Red``

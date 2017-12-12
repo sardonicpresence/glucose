@@ -2,7 +2,8 @@ Release Notes
 =============
 
 v0.0.6
- * Supports trivial, second-class function definitions
+ * Supports trivial, single-argument function definitions
+ * Doesn't support recursive definitions, lambdas or constant applicative forms
 
 v0.0.5
  * Supports enum type definitions
