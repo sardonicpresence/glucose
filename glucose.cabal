@@ -113,6 +113,7 @@ test-suite glucose-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       Glucose.CompilerSpec
+                     , Glucose.ErrorSpec
                      , Glucose.LexerSpec
                      , Glucose.ParserSpec
                      , Glucose.DesugarSpec

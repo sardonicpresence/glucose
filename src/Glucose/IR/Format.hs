@@ -29,7 +29,7 @@ instance FormatsAnnotations f ann => Formattable f (DataType (Type ann)) where
   format f (ADT name) = formatIf CodegenType (<> "#") f name
   format f (Function arity from to) = from' <> format f arity <> format f to where
     from' = case from ^? dataType of
-              Just Function{} -> "(" <> format f from <> ")"
+              Just (unboxed -> Function{}) -> "(" <> format f from <> ")"
               _ -> format f from
   format f (Polymorphic ty) = format f ty
   format f (Constrained ty) = formatIf CodegenType (within "{" "}") f ty
